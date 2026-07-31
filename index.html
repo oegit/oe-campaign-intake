@@ -1,0 +1,1509 @@
+<!doctype html>
+<!--
+  Campaign Intake — Video Production agent (Layer 1, spec §10, decisions R1–R10 / S5–S6).
+
+  The PRIMARY intake UI (R2): an interactive form that produces a validated
+  campaigns/<name>/intake.json at schemaVersion 2.0. This file is the AGENT's form (Layer 1);
+  every option list it shows — templates, languages, voices, channel specs, KPIs, brand — is read
+  from the active project's Layer 2 config at runtime (R1). It ships EMPTY: onboarding a project
+  needs zero intake configuration: the config is loaded in the browser, or injected by
+  `npm run intake -- --project <name>`.
+
+  NOT A CLAUDE.AI ARTIFACT. Measured 2026-07-30: that sandbox blocks the unpkg origin
+  (`script-src-elem`), so the three library tags never load and the page cannot run there. It is not
+  a regression and no policy of ours causes it — a probe with our own CSP trimmed to nothing that
+  could collide was blocked identically. The shareable surface is the published URL.
+
+  THE EMITTING HALF IS NOT IN THIS FILE. It lives in templates/intake/intake-core.js and is
+  INLINED below as <script id="intake-core">, because this is ONE self-contained file and cannot
+  require anything. `npm run intake:sync` re-inlines it and scripts/intake-form.test.js fails if
+  the two copies differ — because for as long as the emitting code lived inside a React component,
+  nothing could see its output, and this form went on emitting schemaVersion "1.0" while the
+  schema, the validator and channel-map.js had all moved to 2.0.
+
+  Fallback (R2): Claude Code renders no artifacts, so the same field sequence is documented as a
+  guided chat Q&A in CLAUDE.md and emits an IDENTICAL intake.json. This form is the primary path.
+
+  Emitted intake.json validates against schemas/intake.schema.json and is then checked by
+  scripts/intake-validator.js (Layer-2 cross-checks) before any credit is spent.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<!--
+  THE POLICY GOES FIRST. A <meta> CSP only governs what is fetched AFTER it is parsed, so putting it
+  below the script tags would be decoration. Everything under it is deliberate:
+
+    connect-src 'none' + form-action 'none'  ← THE POINT. A project config loaded into this page has
+      nowhere to go: no fetch, no XHR, no beacon, no socket, no form post. "Your config never leaves
+      the browser" stops being a README promise and becomes something the browser enforces.
+    script-src … 'unsafe-inline' 'unsafe-eval'  ← honest, not lax. Babel Standalone COMPILES THE JSX
+      IN THE PAGE, which is `eval` by another name, and the two inline blocks need 'unsafe-inline'.
+      A strict script policy and in-browser Babel are mutually exclusive; a nonce would cover the
+      inline blocks and not the eval. So this CSP's teeth are the two directives above, and pinning
+      + SRI below is what actually protects the script. Removing Babel is the real fix and it costs
+      a second build artifact that can drift — see tasks/todo.md.
+    style-src has NO https:  ← so a config's `brand.fontsHref` is INERT on the public URL. That is a
+      real behavioural difference between the TWO surfaces (local build · public link) and it is
+      written down in CLAUDE.md §3.1 rather than left to be discovered. The form
+      falls back to the font STACK the socket names, which is what a font stack is for.
+    img-src … https:  ← `brand.logo` is an arbitrary URL from a project config; without this every
+      project's logo breaks, including on the local build.
+
+  frame-ancestors is deliberately absent: it is IGNORED in a <meta> policy and GitHub Pages sends no
+  CSP header, so the page is framable. Stated rather than faked with a directive that does nothing.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://unpkg.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light" />
+<title>Campaign Intake — Video Production</title>
+<!--
+  PINNED, THEN HASHED — and the pinning is a prerequisite, not tidiness. These were `react@18`,
+  `react-dom@18` and `@babel/standalone` with NO VERSION AT ALL: unpkg resolves the latest match, so
+  an integrity hash would have failed the day it moved and the page would have rendered NOTHING, with
+  no message. SRI and a floating range cannot both be true.
+
+  `crossorigin` was missing from the Babel tag; SRI requires it for a cross-origin resource, so that
+  hash would never have been checked.
+
+  Refresh: resolve with `curl -sI -o /dev/null -w '%{url_effective}' -L <url>`, then
+  `curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
+-->
+<script crossorigin integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z" src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1" src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script crossorigin integrity="sha384-bdF7m0Y1IFKt9Q6xC8X9qkXn0OBriQWKyWwZKYsN05zF6P/g9OakjjL0G2Sd4pB4" src="https://unpkg.com/@babel/standalone@8.0.4/babel.min.js"></script>
+<style>
+  /* ───────────────────────────────────────────────────────────────────────────────────────────
+     THREE LAYERS, AND THE BOUNDARIES MATTER.
+
+     1 PRIMITIVES — spacing, radius, type scale. Belong to nobody.
+     2 SEMANTIC   — ink, surfaces, and the three states this form actually has: fine, warned,
+                    blocked. Deliberately NOT brand-tinted: "confirmed" means the same thing in
+                    every brand, and a brand-coloured confirmation badge would collide with a
+                    brand-coloured selected chip, which is the one place the brand does speak.
+     3 BRAND      — the SIX sockets applyBrand writes, plus two it DERIVES. Six is the contract
+                    with Layer 2 (intake-config.json · validate.js's brand check); a seventh input
+                    would be a contract change, so anything else the design needs is computed from
+                    the primary in intake-core.js, where a test can measure it.
+     ─────────────────────────────────────────────────────────────────────────────────────────── */
+  :root {
+    /* 1 · primitives */
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+    --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-pill: 999px;
+    --fs-xs: 11px; --fs-sm: 12px; --fs-base: 14px; --fs-md: 15px; --fs-lg: 19px; --fs-xl: 26px;
+    --control-h: 38px;
+    --maxw: 1180px;
+    --rail-w: 232px;
+    --shadow-1: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .06);
+    --shadow-2: 0 8px 24px rgba(16, 24, 40, .10);
+    --tap: 0;
+
+    /* 2 · semantic */
+    --fg: #1a1a2e;
+    --muted: #5b6472;
+    --line: #e3e7ee;
+    --line-strong: #cbd3e0;
+    --surface: #ffffff;
+    --surface-2: #f6f8fb;
+    --bad: #b42318;        --bad-soft: #fef3f2;
+    --warn: #92500a;       --warn-soft: #fffaeb;
+    --good: #05603a;       --good-soft: #ecfdf3;
+    --code-bg: #0f172a;    --code-fg: #e2e8f0;
+
+    /* 3 · brand — neutral defaults; every one is OVERWRITTEN from the project's Layer 2 config. */
+    --brand: #2563eb;         /* primary: the band, a selected chip's edge, the primary action */
+    --brand-on: #ffffff;      /* text ON the brand — MEASURED by onColorFor, never assumed */
+    --brand-soft: #eff6ff;    /* tinted surface behind a selected chip */
+    --brand-accent: #2563eb;  /* secondary: rules and markers ONLY, never a surface behind text */
+    --brand-deep: #1d4fbc;    /* DERIVED: the dark end of the band */
+    --brand-text: #1d4fbc;    /* DERIVED: the brand, darkened until it reads on --brand-soft */
+    --font-display: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --font-body: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    /* The one typographic decision Layer 1 gets to make. Every value that travels verbatim into the
+       emitted document — ticket, campaign, credits, codes, the JSON itself — is set in it, so the
+       page distinguishes what you are WRITING from what you are READING. Survives any brand font. */
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--surface-2); color: var(--fg);
+    font-family: var(--font-body); font-size: var(--fs-base); line-height: 1.5;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: var(--sp-5); }
+  .mono, code, pre { font-family: var(--font-mono); }
+  /* `overflow-wrap: anywhere` is load-bearing, not polish. A config's delivery folder is a long
+     unbreakable URL and it is rendered inline in a hint; at 375px that single <code> was pushing
+     the whole column to 508px. A project supplies these strings, so their length is not something
+     Layer 1 gets to assume. */
+  code { font-size: .92em; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px 5px; overflow-wrap: anywhere; }
+  a { color: var(--brand-text); }
+
+  /* Focus is a rule, which is a legitimate use of the secondary. Never a surface under text. */
+  :focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; border-radius: var(--r-sm); }
+  .skip { position: absolute; left: -9999px; }
+  .skip:focus { left: var(--sp-4); top: var(--sp-4); z-index: 20; background: var(--surface); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+
+  /* ── The band ─────────────────────────────────────────────────────────────────────────────
+     A gradient to its own derived dark end. The label is measured against the WORST stop, not
+     the first, because a gradient that passes on its light end and fails on its dark one is how
+     an accessible-looking header ships unreadable. */
+  .brandbar { background: linear-gradient(100deg, var(--brand) 0%, var(--brand-deep) 100%); color: var(--brand-on); }
+  .brandbar .wrap { display: flex; align-items: center; gap: var(--sp-3); padding-top: var(--sp-3); padding-bottom: var(--sp-3); flex-wrap: wrap; }
+  .brandmark { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-lg); letter-spacing: -.01em; }
+  .brandmark img { height: 26px; width: auto; display: block; }
+  .brandbar-tag { font-size: var(--fs-sm); opacity: .9; border-left: 1px solid currentColor; padding-left: var(--sp-3); }
+  .brandbar-src { font-family: var(--font-mono); font-size: var(--fs-xs); opacity: .9; margin-left: auto; }
+  .linkish { background: none; border: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; padding: 0 0 0 var(--sp-2); }
+
+  h1 { font-family: var(--font-display); font-size: var(--fs-xl); line-height: 1.15; letter-spacing: -.02em; margin: 0 0 var(--sp-1); }
+  .sub { color: var(--muted); font-size: var(--fs-sm); margin-bottom: var(--sp-5); max-width: 68ch; }
+
+  /* ── Shell: rail + form ──────────────────────────────────────────────────────────────────── */
+  /* `minmax(0, …)` on EVERY track, and `min-width: 0` on both children.
+     A grid track's automatic minimum is min-content, so one nowrap rail and one long line of JSON
+     were enough to push the single-column mobile layout out to 831px inside a 375px viewport —
+     measured, in an iframe, because the preview pane will not go below 848px and therefore cannot
+     see this at all. A `1fr` track does not mean "no wider than the container". */
+  .shell { display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
+  .shell > * { min-width: 0; }
+  .rail { position: sticky; top: var(--sp-5); }
+  .rail ol { list-style: none; margin: 0; padding: 0; position: relative; }
+  /* The spine. One continuous rule behind the dots, so the six sections read as one run. */
+  .rail ol::before { content: ""; position: absolute; left: 7px; top: 10px; bottom: 10px; width: 2px; background: var(--line); }
+  .rail li { position: relative; }
+  .rail a { display: grid; grid-template-columns: 16px 1fr; gap: var(--sp-3); align-items: baseline;
+            padding: var(--sp-2) 0; text-decoration: none; color: var(--muted); font-size: var(--fs-sm); }
+  .rail a:hover { color: var(--fg); }
+  .rail .dot { width: 16px; height: 16px; border-radius: var(--r-pill); border: 2px solid var(--line-strong);
+               background: var(--surface); position: relative; z-index: 1; transition: background .15s, border-color .15s; }
+  .rail .num { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: .04em; color: var(--muted); }
+  .rail .name { display: block; color: var(--fg); }
+  .rail li.done .dot { background: var(--brand); border-color: var(--brand); }
+  .rail li.blocked .dot { background: var(--bad); border-color: var(--bad); }
+  /* Never colour alone (WCAG 1.4.1): the state is also a word. */
+  .rail .state { display: block; font-size: var(--fs-xs); }
+  .rail li.blocked .state { color: var(--bad); font-weight: 600; }
+  .rail li.done .state { color: var(--good); }
+
+  /* ── Cards ──────────────────────────────────────────────────────────────────────────────── */
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+          padding: var(--sp-5); margin-bottom: var(--sp-4); box-shadow: var(--shadow-1); scroll-margin-top: var(--sp-5); }
+  .card > h2 { font-family: var(--font-display); font-size: var(--fs-md); margin: 0 0 var(--sp-4); letter-spacing: -.01em; display: flex; align-items: baseline; gap: var(--sp-3); }
+  .card > h2 .n { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); letter-spacing: .06em; }
+  .card:focus-within { border-color: var(--line-strong); }
+  .card.problem { border-color: var(--bad); }
+  .card.warn-card { border-color: var(--warn); }
+  .card.drop { border: 2px dashed var(--line-strong); box-shadow: none; }
+  .card.drop.dropping { border-color: var(--brand); background: var(--brand-soft); }
+
+  /* ── Controls ───────────────────────────────────────────────────────────────────────────── */
+  label { display: block; font-size: var(--fs-sm); font-weight: 600; margin: var(--sp-4) 0 var(--sp-1); }
+  .card > h2 + label, fieldset > legend + .row { margin-top: 0; }
+  input[type=text], input[type=number], input[type=date], select, textarea {
+    width: 100%; min-height: var(--control-h); padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--line-strong); border-radius: var(--r-md);
+    font-size: var(--fs-base); font-family: inherit; background: var(--surface); color: var(--fg);
+  }
+  input[type=text], input[type=number] { font-family: var(--font-mono); font-size: var(--fs-sm); }
+  textarea { min-height: 64px; resize: vertical; font-family: inherit; }
+  [aria-invalid="true"] { border-color: var(--bad); background: var(--bad-soft); }
+  .row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sp-3); }
+
+  fieldset { border: 0; margin: var(--sp-4) 0 0; padding: 0; min-width: 0; }
+  legend { font-size: var(--fs-sm); font-weight: 600; padding: 0; margin-bottom: var(--sp-1); }
+
+  /* A real <button>, so it is reachable, pressable with Space, and announced as a toggle. */
+  .chip { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h);
+          padding: var(--sp-1) var(--sp-3); border: 1px solid var(--line-strong); border-radius: var(--r-pill);
+          font: inherit; font-size: var(--fs-sm); background: var(--surface); color: var(--fg);
+          cursor: pointer; transition: border-color .12s, background .12s; }
+  .chip:hover { border-color: var(--fg); }
+  .chip[aria-pressed="true"], .chip[aria-checked="true"] {
+    border-color: var(--brand); background: var(--brand-soft); color: var(--brand-text); font-weight: 600;
+  }
+  .chip[aria-disabled="true"] { opacity: .55; cursor: not-allowed; border-style: dashed; }
+
+  .badge { font-size: var(--fs-xs); padding: 2px 7px; border-radius: var(--r-pill); font-weight: 600; letter-spacing: .01em; }
+  .badge.confirmed { background: var(--good-soft); color: var(--good); }
+  .badge.pending { background: var(--warn-soft); color: var(--warn); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+         min-height: var(--control-h); padding: var(--sp-2) var(--sp-4);
+         background: var(--brand); color: var(--brand-on); border: 1px solid transparent;
+         border-radius: var(--r-md); font: inherit; font-size: var(--fs-base); font-weight: 600; cursor: pointer;
+         transition: background .12s; }
+  .btn:hover { background: var(--brand-deep); }
+  .btn.ghost { background: var(--surface); color: var(--fg); border-color: var(--line-strong); }
+  .btn.ghost:hover { background: var(--surface-2); }
+  .btn:disabled { background: var(--line); color: var(--muted); cursor: not-allowed; }
+  .file-btn input[type=file] { display: none; }
+  .check { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); font-weight: 400; margin: 0; }
+  .check input { width: auto; min-height: 0; }
+
+  .hint { font-size: var(--fs-sm); color: var(--muted); margin-top: var(--sp-1); }
+  .err { color: var(--bad); font-size: var(--fs-sm); margin-top: var(--sp-1); }
+  .warn-line { color: var(--warn); }
+  .est { font-size: var(--fs-base); }
+  .est b { font-family: var(--font-mono); font-size: var(--fs-lg); }
+
+  pre { background: var(--code-bg); color: var(--code-fg); padding: var(--sp-4); border-radius: var(--r-md);
+        overflow: auto; font-size: var(--fs-sm); max-height: 340px; margin: 0; }
+  .excerpt { background: var(--surface-2); color: var(--fg); border: 1px solid var(--line);
+             white-space: pre-wrap; word-break: break-word; max-height: 140px; }
+
+  /* ── The error summary, and the ledger ──────────────────────────────────────────────────────
+     A live region that MOUNTS at the same moment its content changes is frequently not announced,
+     so this element is always in the DOM and merely empty when the form is clean. Polite, not
+     assertive: it re-renders on every keystroke and assertive would be a stream of interruptions. */
+  .summary { margin-bottom: var(--sp-4); }
+  .summary ol { margin: var(--sp-2) 0 0; padding-left: var(--sp-5); }
+  .summary li { margin: var(--sp-1) 0; }
+  .summary a { color: var(--bad); }
+
+  .ledger { position: sticky; bottom: 0; z-index: 5; margin-top: var(--sp-5);
+            background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+            box-shadow: var(--shadow-2); padding: var(--sp-3) var(--sp-4);
+            display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+  .ledger .figure { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--muted); }
+  .ledger .figure b { color: var(--fg); font-size: var(--fs-base); }
+  .ledger .figure.blocking b { color: var(--bad); }
+  .ledger .actions { margin-left: auto; display: flex; gap: var(--sp-2); }
+
+  /* ── Responsive ─────────────────────────────────────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+    .rail { position: static; overflow-x: auto; }
+    .rail ol { display: flex; gap: var(--sp-4); }
+    .rail ol::before { left: 0; right: 0; top: 7px; bottom: auto; height: 2px; width: auto; }
+    .rail a { grid-template-columns: 1fr; gap: var(--sp-1); white-space: nowrap; }
+    .rail .state { white-space: nowrap; }
+  }
+  @media (max-width: 640px) {
+    .wrap { padding: var(--sp-4); }
+    :root { --fs-xl: 22px; --sp-5: 16px; }
+    .ledger .actions { margin-left: 0; width: 100%; }
+  }
+  /* Touch targets clear 44px without inflating the pointer layout. */
+  @media (pointer: coarse) { :root { --control-h: 44px; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+  @media print {
+    .rail, .ledger, .btn, .skip { display: none; }
+    .shell { grid-template-columns: 1fr; }
+    .card { break-inside: avoid; box-shadow: none; }
+    pre { max-height: none; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- INLINED from templates/intake/intake-core.js — do not hand-edit; run `npm run intake:sync`. -->
+<script id="intake-core">
+/* eslint-disable */
+// intake-core.js — the pure half of the Campaign Intake (Layer 1, spec §10, decisions W1/W3/W4/W6).
+//
+// Everything here is plain JS with no JSX, no React and no DOM: enums, derivations, the form's
+// error list, and buildIntakeV2() — the function that turns form state into the emitted document.
+//
+// ── Why this is a separate file ────────────────────────────────────────────────────────────────
+// intake.html is ONE self-contained file — that is what makes the published copy byte-identical to
+// the source and checkable by a single hash — so it cannot `require` anything at runtime, and it
+// INLINES this file's contents inside a <script> tag instead.
+//
+// (This used to say "because it gets pasted into claude.ai". That reason was wrong, measured
+// 2026-07-30: claude.ai's artifact sandbox blocks the unpkg origin outright, so this file has never
+// been able to run there. The self-contained property is still worth having; the justification is
+// the hash, not a surface that never existed. See CLAUDE.md §3.1.)
+// `npm run intake:sync` re-inlines it; `scripts/intake-form.test.js` fails if the two copies differ,
+// and `npm run validate` now chains `sync-intake-html.js --check` for the same reason. That last
+// clause was written here long before it was true: `--check` existed and was wired to nothing.
+//
+// The reason to pay that price: the emitted document is the whole product of this form, and until
+// now nothing could check it. The form built its JSON inside a React component, so the only way to
+// see the output was to open a browser and click. That is how it shipped `schemaVersion: "1.0"`
+// for as long as it did while the schema, the validator and channel-map.js had all moved to v2 —
+// nothing was in a position to notice. Now intake.test.js loads THIS file, drives it with real
+// project configs, and asserts the result against the real schema and the real validator.
+//
+// Node: `require("./intake-core")`. Browser: inlined, and it assigns the same names globally.
+
+// ── Vocabularies ──────────────────────────────────────────────────────────────────────────────
+//
+// Intake v2 names things the way a marketer does. `channel-map.js` owns the translation into
+// platform-specs.yaml keys and is deliberately NOT duplicated here: this file emits the LABELS,
+// and every consumer maps them. A spec key typed as a label is an error the validator raises.
+
+/** 01 Video type. `phase: 2-pending` is stamped by the type itself — W3's whole mechanism. */
+const VIDEO_TYPES = [
+  { key: "tv", label: "TV Ads", phase: "2-pending" },
+  { key: "social", label: "Social Media" },
+  { key: "youtube", label: "YouTube" },
+  { key: "platform", label: "Platform Tour" },
+  { key: "general", label: "General" },
+];
+
+/** 02 Channel · execution. Only `Video Assembly` has a pipeline; the rest are recorded and blocked. */
+const EXECUTIONS = ["Video Assembly", "Motion Graphics", "Brand Character", "UGC"];
+const IMPLEMENTED_EXECUTIONS = ["Video Assembly"];
+
+/**
+ * 02 Channel · editing. Same shape, same rule — and the VALUE is the schema's enum, not a display
+ * string. The first draft of this file used "Adobe Premiere" and "After Effects" as values and the
+ * emitted document failed `channel.editing` on the spot: the schema says `premiere` and
+ * `aftereffects`. Vocabularies belong to the schema; a form that invents its own produces documents
+ * nothing downstream accepts, which is exactly how this artifact drifted a whole version behind.
+ */
+const EDITING = [
+  { value: "remotion", label: "Remotion" },
+  { value: "premiere", label: "Adobe Premiere" },
+  { value: "aftereffects", label: "After Effects" },
+];
+const IMPLEMENTED_EDITING = ["remotion"];
+
+/**
+ * 02 Channel · canal. SOCIAL ONLY and therefore optional — with no canal there is no R3
+ * derivation and no safe-zone check, and that is reported as *not applicable*, never as *passed*.
+ */
+const CANAL = ["Meta", "TikTok", "YouTube Shorts", "LinkedIn"];
+
+const MODES = ["Generate", "Add", "N/A"];
+const RATIOS = ["9:16", "1:1", "4:5", "16:9"];
+const OUTPUT_FORMATS = ["MP4 H.264", "MOV ProRes"];
+const CREATION_TYPES = ["B-Rolls", "VoiceOver", "Music", "SFX", "Images"];
+const UPLOAD_KINDS = ["footage", "stills", "closing_promo", "music", "logo"];
+const SHEET_CHANNELS = ["slack", "drive", "email", "manual"];
+const SKIP_PHRASE = "SKIP G1";
+
+/**
+ * The config keys a usable project config must carry. NINE, not a wish list.
+ *
+ * Most are dereferenced without a fallback, so a config missing one crashes the render to a BLANK
+ * PAGE — not hypothetical: a shipped project config was missing `channels` and `sceneCostEstimate`
+ * and its form had never rendered at all. A blank page is the worst failure available here, because
+ * it looks like nothing happened.
+ *
+ * `voices` and `music` are the honest exception: this form reads neither today. They stay required
+ * because a config lacking them describes a project the validator will reject later anyway, and the
+ * job of a fail-closed guard is to say so at the door rather than three steps downstream.
+ */
+const REQUIRED_CONFIG_KEYS = ["project", "channels", "languages", "voices", "music", "templates", "sceneCostEstimate", "kpis", "deliveryDriveDefault"];
+const missingConfigKeys = (cfg) => REQUIRED_CONFIG_KEYS.filter((k) => !cfg || cfg[k] == null);
+
+/**
+ * What is PRESENT but EMPTY. Warnings, never blocks.
+ *
+ * `missingConfigKeys` is a null check, so `languages: []`, `channels: {}` and `templates: {}` all
+ * pass it — and that combination is precisely the "form that looks usable while offering nothing"
+ * this file's empty state was designed to refuse. It never came up while the config was pasted in
+ * by whoever wrote it. It comes up the moment a public loader accepts arbitrary JSON.
+ *
+ * They are warnings and not errors because at least one of them is a legitimate shipped state: a
+ * project with no template library runs every campaign from scratch. The loader shows these before
+ * you commit to a config, so a surprise is a decision instead of a discovery three sections in.
+ */
+function configWarnings(cfg) {
+  const w = [];
+  if (!cfg) return w;
+  if (!(cfg.languages || []).length) w.push("`languages` is empty — no VoiceOver language can be picked, so the D2 review gate has nothing to block on");
+  if (!Object.keys(cfg.channels || {}).length) w.push("`channels` is empty — no channel is offered, so no aspect-ratio default derives (R3) and no safe zone resolves");
+  if (!Object.keys(cfg.templates || {}).length) w.push("`templates` is empty — every campaign runs from scratch. Legitimate, but the estimate falls back to two slot scenes");
+  if (!(cfg.voices || []).length) w.push("`voices` is empty — the project declares no voice for the narrator role");
+  if (!cfg.brand) w.push("no `brand` — the form keeps Layer 1's neutral colours and fonts");
+  return w;
+}
+
+/**
+ * Where a JSON.parse failure actually is, as a caret in an excerpt of the text.
+ *
+ * "Unexpected token } in JSON at position 412" is a true statement about a string nobody can see.
+ * Engines disagree on the wording — some report a position, some a line and column, newer ones
+ * both — so read whichever is offered and derive the rest. Returns null when neither is present,
+ * which the caller shows as the raw message rather than inventing a location.
+ */
+function jsonErrorContext(text, message, radius = 40) {
+  const src = String(text == null ? "" : text);
+  const msg = String(message || "");
+  let pos = null;
+  const byPos = /position (\d+)/i.exec(msg);
+  if (byPos) pos = Number(byPos[1]);
+  if (pos == null) {
+    const byLine = /line (\d+) column (\d+)/i.exec(msg);
+    if (byLine) {
+      const lines = src.split("\n");
+      const upto = lines.slice(0, Number(byLine[1]) - 1).reduce((n, l) => n + l.length + 1, 0);
+      pos = upto + Number(byLine[2]) - 1;
+    }
+  }
+  if (pos == null || !src) return null;
+  pos = Math.max(0, Math.min(pos, src.length));
+  const start = Math.max(0, pos - radius);
+  const end = Math.min(src.length, pos + radius);
+  const oneLine = (s) => s.replace(/\s+/g, " ");
+  return {
+    position: pos,
+    line: src.slice(0, pos).split("\n").length,
+    column: pos - src.lastIndexOf("\n", pos - 1),
+    excerpt: (start > 0 ? "…" : "") + oneLine(src.slice(start, pos)) + " ⟨here⟩ " + oneLine(src.slice(pos, end)) + (end < src.length ? "…" : ""),
+  };
+}
+
+// ── Brand colour maths (pure; applyBrand lives in the HTML because it touches the DOM) ────────
+//
+// Brand arrives from Layer 2 like every other list on this form. Layer 1 ships neutral defaults and
+// names no brand: the portability invariant is "no PROJECT in a Layer 1 file", and a hardcoded
+// palette is a project in a Layer 1 file exactly as the hardcoded language list was.
+
+/** WCAG relative luminance of a #rrggbb colour. */
+function luminance(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+  if (!m) return null;
+  const ch = [0, 2, 4].map((i) => {
+    const v = parseInt(m[1].slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+function contrast(a, b) {
+  const x = luminance(a);
+  const y = luminance(b);
+  if (x == null || y == null) return 0;
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/**
+ * The text colour that sits ON a brand colour — MEASURED, never assumed.
+ *
+ * Two illustrative colours, deliberately belonging to no project: white on `#2563eb` measures
+ * 5.17:1 and passes AA, white on `#e58c1a` measures 2.59:1 and does not — so this function answers
+ * black for the second. A form that hardcodes white-on-primary is legible for one brand and quietly
+ * unreadable for the next, and this file is meant to serve any brand. It is also why a secondary
+ * colour is only ever a rule or a marker on this form, never a surface with text on it.
+ */
+const onColorFor = (bg) => (contrast(bg, "#ffffff") >= contrast(bg, "#000000") ? "#ffffff" : "#000000");
+
+/** A very light tint of a brand colour, for the surface behind a selected chip. */
+function tint(hex, amount = 0.92) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+  if (!m) return null;
+  const mix = [0, 2, 4].map((i) => Math.round(parseInt(m[1].slice(i, i + 2), 16) * (1 - amount) + 255 * amount));
+  return "rgb(" + mix.join(",") + ")";
+}
+
+/** The same mix toward black. `#rrggbb` in, `#rrggbb` out, null on anything else — like tint. */
+function shade(hex, amount = 0.2) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+  if (!m) return null;
+  const hx = (n) => n.toString(16).padStart(2, "0");
+  return "#" + [0, 2, 4].map((i) => hx(Math.round(parseInt(m[1].slice(i, i + 2), 16) * (1 - amount)))).join("");
+}
+
+/**
+ * A brand colour dark enough to READ on a given surface — searched, not assumed.
+ *
+ * `--brand` doubles as a text colour on the pale `--brand-soft` behind a selected chip. For a
+ * mid-blue that is fine. For a pale or saturated brand it is somewhere between weak and invisible,
+ * and nothing in the form would say so: the chip still looks selected, it is only the label that
+ * cannot be read. So darken in steps until the pair clears 4.5:1, and fall back to the neutral ink
+ * rather than return something that does not.
+ */
+function accessibleBrandText(hex, surface, fallback = "#1a1a2e", target = 4.5) {
+  if (luminance(hex) == null || luminance(surface) == null) return fallback;
+  if (contrast(hex, surface) >= target) return hex.toLowerCase();
+  for (let k = 1; k <= 12; k++) {
+    const candidate = shade(hex, k / 16);
+    if (candidate && contrast(candidate, surface) >= target) return candidate;
+  }
+  return fallback;
+}
+
+/**
+ * Every colour pair this form actually paints, MEASURED.
+ *
+ * "Contrast is measured, not assumed" was true of one value — the text on the primary. Everything
+ * else was still a hope: the brand used as text on its own tint, the header gradient's dark end,
+ * the muted ink. This returns the real ratios so a test can assert them for any brand instead of
+ * for the one somebody happened to look at, and so the reason a pair passes is a number.
+ */
+function ratioReport(brand, surface = "#ffffff") {
+  const primary = (brand && brand.colors && brand.colors.primary) || null;
+  if (!primary || luminance(primary) == null) return null;
+  const soft = tint(primary);
+  const softHex = soft ? "#" + soft.replace(/[^\d,]/g, "").split(",").map((n) => Number(n).toString(16).padStart(2, "0")).join("") : surface;
+  const deep = shade(primary, 0.22);
+  const brandText = accessibleBrandText(primary, softHex);
+  return {
+    primary,
+    onPrimary: onColorFor(primary),
+    // The gradient runs primary -> deep, so the text on it must clear its WORST end, not its first.
+    onPrimaryWorst: Math.min(contrast(primary, onColorFor(primary)), contrast(deep, onColorFor(primary))),
+    brandTextOnSoft: contrast(brandText, softHex),
+    brandText,
+    deep,
+    softHex,
+  };
+}
+
+// ── Derivations ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * W3 generalized: which selections have no pipeline behind them.
+ *
+ * DERIVED from the selections, never read from the payload — a form that forgets to mark
+ * `executionPending` must not be able to smuggle an unbuildable run past the gate. The validator
+ * derives it the same way and warns when the emitter's list disagrees, so this is the emitter
+ * holding up its end rather than the only line of defence.
+ */
+function deriveExecutionPending(execution, editing) {
+  return [
+    ...(execution || []).filter((e) => !IMPLEMENTED_EXECUTIONS.includes(e)),
+    ...(editing || []).filter((e) => !IMPLEMENTED_EDITING.includes(e)),
+  ];
+}
+
+/** The reviewer status languages.yaml declares, which is the only one that governs (R7 · D2). */
+function reviewerStatusOf(cfg, code) {
+  const l = (cfg.languages || []).find((x) => x.code === code);
+  return (l && (l.reviewer || l.reviewerStatus)) || "pending";
+}
+
+/**
+ * The estimate, before any credit is spent (R10 · I1).
+ *
+ * Credits are computed; USD is NOT. No credit→USD rate is recorded anywhere in this repo, and the
+ * project ceiling is denominated in USD (`ceilings.socialPerVideoUSD`) — so the honest output is a
+ * credit figure plus `status: partial` naming the missing rate, exactly the V3/F5 shape the cost
+ * ledger uses. Writing a made-up rate here would turn "we cannot check the ceiling" into a green
+ * tick, which is the one outcome worth preventing.
+ */
+function estimate(cfg, { template, count, voMode }) {
+  const tmpl = template ? (cfg.templates || {})[template] : null;
+  const sce = cfg.sceneCostEstimate || {};
+  const perVideoCredits = tmpl
+    ? (tmpl.scenes || []).reduce((s, sc) => s + (sce[sc.level] || 0), 0)
+    : (sce.slot || 0) * 2;
+  const n = Math.max(0, Number(count) || 0);
+  const notCaptured = ["credit→USD rate is not recorded in this repo, so the USD ceiling cannot be checked here"];
+  if (voMode === "generate") notCaptured.push("VoiceOver — the TTS provider exposes no per-call price, so USD is not captured (V3)");
+  return {
+    masterCredits: perVideoCredits,
+    perVariationCredits: perVideoCredits,
+    totalCredits: perVideoCredits * (1 + n),
+    totalUsd: null,
+    perVideoUsd: null,
+    budgetUsd: (cfg.ceilings && cfg.ceilings.socialPerVideoUSD) != null ? cfg.ceilings.socialPerVideoUSD : null,
+    status: "partial",
+    notCaptured,
+    // The dub cost is a LAYER 2 number. Layer 1 states the shape and the block; the measured price
+    // belongs to whoever's account measured it, and this file is published (see §3.1) — so it reads
+    // `cfg.dubPerLanguageCredits` / `cfg.dubCostNote` and defaults to "not estimated here" rather
+    // than carrying one project's figures into every other project's form.
+    dubbing:
+      voMode === "translate"
+        ? {
+            note:
+              cfg.dubCostNote ||
+              "the dub pipeline is SPECIFIED and INACTIVE (W5); per-language dub cost is not estimated here",
+            perLanguageCredits: cfg.dubPerLanguageCredits != null ? cfg.dubPerLanguageCredits : null,
+          }
+        : null,
+  };
+}
+
+// ── The emitted document ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Form state → a schemaVersion 2.0 intake.
+ *
+ * Shape notes worth keeping straight, because each one is a decision and not a preference:
+ *   · `canal` is emitted ONLY for social (W1). On any other type the validator treats channels as
+ *     a contradiction, not a stray field to ignore.
+ *   · `videoType.phase` comes from the TYPE TABLE, so an undeliverable type marks its own output.
+ *   · `delivery.folderName` IS the ticket number (W4) — never a name someone types twice.
+ *   · `signOff` carries only what has actually been recorded. An empty list is the honest state and
+ *     the validator turns it into a render block: delivery is not approval (W6).
+ */
+function buildIntakeV2(s, cfg, now) {
+  const vt = VIDEO_TYPES.find((t) => t.key === s.videoTypeKey) || VIDEO_TYPES[1];
+  const isSocial = vt.key === "social";
+  const execution = s.execution && s.execution.length ? s.execution : ["Video Assembly"];
+  const editing = s.editing && s.editing.length ? s.editing : ["remotion"];
+  const pending = deriveExecutionPending(execution, editing);
+
+  const wantsVo = (s.creationTypes || []).includes("VoiceOver");
+  const voiceover = wantsVo
+    ? {
+        mode: s.voMode || "generate",
+        languages: (s.voLangs || []).map((code) => {
+          const status = reviewerStatusOf(cfg, code);
+          return { lang: code, reviewerStatus: status, renderBlocked: status !== "confirmed" };
+        }),
+        reviewSheet: {
+          channel: s.sheetChannel || null,
+          recipient: s.sheetRecipient || null,
+          signOff: (s.signOff || []).filter((x) => x && x.lang && x.reviewer && x.at),
+        },
+      }
+    : null;
+
+  const assetsCreation = (s.creationTypes || []).length
+    ? { types: s.creationTypes.slice(), prompt: s.creationPrompt || "", voiceover }
+    : null;
+  const assetsUpload = (s.uploadKinds || []).length
+    ? (s.uploadKinds || []).reduce((o, k) => { o[k] = true; return o; }, {})
+    : null;
+
+  const ticketNumber = (s.ticketNumber || "").trim();
+
+  const out = {
+    schemaVersion: "2.0",
+    createdAt: now || null,
+    project: cfg.project,
+    objectives: { goal: s.goal || "", kpis: (s.kpis || []).slice() },
+    videoType: {
+      type: vt.key,
+      label: vt.label,
+      template: s.template || null,
+      ...(vt.phase ? { phase: vt.phase } : {}),
+    },
+    channel: {
+      ...(isSocial && (s.canal || []).length ? { canal: s.canal.slice() } : {}),
+      execution,
+      editing,
+      ...(pending.length ? { executionPending: pending } : {}),
+      script: { mode: s.scriptMode || "Generate" },
+      storyboard: {
+        mode: s.storyboardMode || "Generate",
+        g1: s.storyboardMode === "N/A" ? "skipped" : s.storyboardMode === "Add" ? "user-provided" : "generate-and-approve",
+        ...(s.storyboardMode === "N/A" ? { skipConfirmed: (s.storyboardSkip || "").trim().toUpperCase() === SKIP_PHRASE } : {}),
+      },
+      inspiration: { mode: s.inspirationMode || "N/A" },
+      durationSec: s.durationSec === "" || s.durationSec == null ? "agent proposes" : Number(s.durationSec),
+      aspectRatio: s.aspectRatio || "9:16",
+      outputFormat: s.outputFormat || OUTPUT_FORMATS[0],
+    },
+    content: { assetsCreation, assetsUpload },
+    metadata: {
+      campaign: s.campaign || "",
+      ticket: { number: ticketNumber, link: s.ticketLink || null },
+      deadline: s.deadline || null,
+      utm: s.utm || null,
+    },
+    delivery: {
+      driveFolder: s.driveFolder || cfg.deliveryDriveDefault || "",
+      // W4: the folder IS the ticket. Deriving it means the two can never disagree.
+      folderName: ticketNumber,
+      rule: "the agent creates <driveFolder>/<folderName>/ and stores every final file there",
+    },
+    variations: {
+      count: Math.max(0, Number(s.count) || 0),
+      costEstimate: estimate(cfg, { template: s.template, count: s.count, voMode: voiceover && voiceover.mode }),
+    },
+    compliance: (s.compliance || []).slice(),
+    warnings: [],
+  };
+  if (!out.createdAt) delete out.createdAt;
+  return out;
+}
+
+/**
+ * What the form refuses to export on, as opposed to what the validator later BLOCKS.
+ *
+ * The split is the same one the validator draws and it matters: a missing ticket number is
+ * malformed and stops here, while a `pending` reviewer is perfectly well-formed and must reach the
+ * validator to be recorded as a render block. Refusing the second here would hide it.
+ */
+function formErrors(s, cfg) {
+  const e = [];
+  // `field` is the id of the control to focus, so an error summary can be a list of LINKS rather
+  // than a list of sentences. `section` lets the rail count blocks per section without parsing the
+  // message — the section used to live only in the "00 · " prefix of the string.
+  const at = (section, field, message) => e.push({ section, field, message });
+  const vt = VIDEO_TYPES.find((t) => t.key === s.videoTypeKey);
+  if (!s.goal || !s.goal.trim()) at("00", "f-goal", "the objective in your own words is required");
+  if (!s.campaign || !s.campaign.trim()) at("04", "f-campaign", "campaign name is required");
+  if (!s.ticketNumber || !s.ticketNumber.trim()) at("04", "f-ticket", "ticket number is required — it is also the delivery folder name (W4)");
+  if (!(s.execution || []).length) at("02", "g-execution", "pick at least one execution");
+  if (vt && vt.key === "social" && !(s.canal || []).length) at("02", "g-canal", "a Social Media video needs at least one channel (W1)");
+  if (vt && vt.key !== "social" && (s.canal || []).length) at("02", "g-canal", `channels belong to Social Media only — '${vt.label}' cannot carry them (W1)`);
+  if (!(s.creationTypes || []).length && !(s.uploadKinds || []).length)
+    at("03", "g-creation", "pick Assets Creation and/or Assets Upload — an intake that creates nothing and uploads nothing has no material to render");
+  if ((s.creationTypes || []).includes("VoiceOver") && !(s.voLangs || []).length) at("03", "g-volangs", "VoiceOver needs at least one language");
+  if (s.storyboardMode === "N/A" && (s.storyboardSkip || "").trim().toUpperCase() !== SKIP_PHRASE)
+    at("02", "f-skip", `to skip G1, type exactly: ${SKIP_PHRASE} (R8)`);
+  if (!s.driveFolder && !cfg.deliveryDriveDefault) at("04", "f-drive", "a delivery Drive folder is required (W4)");
+  return e;
+}
+
+/**
+ * The same errors as the sentences they have always been ("00 · …").
+ *
+ * formErrors returns objects now, because an error summary needs to link to a control and the rail
+ * needs to count per section. This keeps the flat rendering — and keeps every existing assertion
+ * about the wording true, which is the point of adding a helper rather than rewriting the strings.
+ */
+const formErrorMessages = (s, cfg) => formErrors(s, cfg).map((x) => `${x.section} · ${x.message}`);
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    VIDEO_TYPES, EXECUTIONS, IMPLEMENTED_EXECUTIONS, EDITING, IMPLEMENTED_EDITING, CANAL,
+    MODES, RATIOS, OUTPUT_FORMATS, CREATION_TYPES, UPLOAD_KINDS, SHEET_CHANNELS, SKIP_PHRASE,
+    REQUIRED_CONFIG_KEYS, missingConfigKeys, configWarnings, jsonErrorContext,
+    deriveExecutionPending, reviewerStatusOf,
+    estimate, buildIntakeV2, formErrors, formErrorMessages,
+    luminance, contrast, onColorFor, tint, shade, accessibleBrandText, ratioReport,
+  };
+}
+</script>
+
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+// ── PROJECT_CONFIG — Layer 1 SHIPS THIS EMPTY (decision R1) ────────────────────────────────
+//
+// Until 2026-07-30 this file carried one project's config inline — its languages, reviewer
+// statuses, voices and template library, all in a Layer 1 file. Onboarding a project meant editing
+// the agent, which is the one thing the two-layer invariant forbids (§2). Not even as an example: a
+// project name in a Layer 1 comment is still a project name in a Layer 1 file.
+//
+// It is `null` on purpose and the guard is FAIL-CLOSED — and it now checks the config is USABLE,
+// not merely present. An empty object would render a form with every list empty; a config missing
+// one key the form dereferences renders NOTHING, which is worse, because a blank page looks like
+// nothing happened. A shipped project config was missing `channels` and `sceneCostEstimate` and its
+// form had never rendered at all.
+const PROJECT_CONFIG = null;
+
+/**
+ * The complete brand contract with Layer 2: SIX inputs, and a seventh would be a contract change
+ * (intake-config.json's shape, and validate.js's brand check against tokens.json). The two derived
+ * values below are computed from the primary — they are outputs, not things a project supplies.
+ */
+const BRAND_SOCKETS = ["--brand", "--brand-on", "--brand-soft", "--brand-accent", "--font-display", "--font-body"];
+const DERIVED_SOCKETS = ["--brand-deep", "--brand-text"];
+
+/**
+ * Write the project's brand into the CSS sockets. DOM-only, which is why it lives here and the
+ * colour maths it leans on lives in intake-core.js where a test can assert the ratios.
+ *
+ * RESET, THEN SET — and that order is the whole function. This used to only ever write, and only
+ * when a value was truthy, which was correct for exactly one lifetime: a config baked in at build
+ * time. Now that a config can be swapped in the browser, write-only meant loading a branded project
+ * and then loading an unbranded one — `brand` is optional, and at least one shipped config omits it
+ * entirely — left the first project's paint on the page. Passing `null` resets to Layer 1's neutral
+ * defaults, which is what makes "Forget this config" honest.
+ */
+function applyBrand(brand) {
+  const root = document.documentElement;
+  for (const k of BRAND_SOCKETS.concat(DERIVED_SOCKETS)) root.style.removeProperty(k);
+  // Same story for the webfont: this appended a fresh <link> on EVERY call, so three loads left
+  // three stylesheets and forgetting a config never removed the font it brought.
+  const existing = document.getElementById("brand-font");
+  if (existing) existing.remove();
+  if (!brand) return;
+
+  const set = (k, v) => { if (v) root.style.setProperty(k, v); };
+  const c = brand.colors || {};
+  set("--brand", c.primary);
+  set("--brand-on", c.primary && onColorFor(c.primary));
+  set("--brand-soft", c.primary && tint(c.primary));
+  set("--brand-accent", c.secondary || c.primary);
+  // Derived, and both MEASURED rather than picked. --brand-deep is the dark end of the header
+  // gradient; --brand-text is the brand darkened until it actually reads on its own tint, which for
+  // the blue in this repo it did not (4.33:1, under the AA line, on a chip that still looked
+  // selected). ratioReport() in intake-core.js is what asserts these for any brand.
+  const report = c.primary && ratioReport(brand);
+  if (report) {
+    set("--brand-deep", report.deep);
+    set("--brand-text", report.brandText);
+  }
+  const f = brand.fonts || {};
+  set("--font-display", f.display);
+  set("--font-body", f.body);
+  // A webfont is fetched only when the project asks for one by URL; nothing loads otherwise.
+  // NOTE: the published page's CSP has no remote origin in `style-src`, so this link is INERT
+  // there by design and the form falls back to the stack `--font-body` names (CLAUDE.md §3.1).
+  if (brand.fontsHref) {
+    const l = document.createElement("link");
+    l.id = "brand-font";
+    l.rel = "stylesheet";
+    l.href = brand.fontsHref;
+    document.head.appendChild(l);
+  }
+}
+
+/**
+ * A REAL button. It was a <span> with onClick: unreachable by keyboard, announced as nothing, and
+ * 29 of them on the page. `aria-pressed` is the standard toggle-button pattern and brings Space,
+ * Enter, focus and disabled semantics with it; `role="switch"` would read as an on/off setting and
+ * `radio` is right only where the group is single-select, which is why the caller says which.
+ *
+ * A disabled choice uses `aria-disabled`, NOT `disabled`. A real `disabled` button leaves the tab
+ * order and its title is never announced — so a screen-reader user cannot discover WHY a channel is
+ * greyed out, which is the one thing that grey is trying to say.
+ */
+function Chip({ on, disabled, onClick, children, title, radio }) {
+  const state = radio ? { role: "radio", "aria-checked": !!on } : { "aria-pressed": !!on };
+  return (
+    <button
+      type="button"
+      className="chip"
+      title={title}
+      {...state}
+      aria-disabled={disabled ? "true" : undefined}
+      onClick={disabled ? (e) => e.preventDefault() : onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** A labelled group of chips. A row of toggles with no group name is a row of orphans. */
+function ChipGroup({ id, legend, hint, radio, children }) {
+  return (
+    <fieldset id={id}>
+      <legend>{legend}</legend>
+      <div className="row" role={radio ? "radiogroup" : undefined} aria-label={radio ? legend : undefined}>{children}</div>
+      {hint && <div className="hint">{hint}</div>}
+    </fieldset>
+  );
+}
+const toggle = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+
+// ── Remembering a config ─────────────────────────────────────────────────────────────────────
+//
+// sessionStorage by DEFAULT, localStorage only when explicitly ticked. That is not caution for its
+// own sake: every GitHub Pages site under one account shares ONE ORIGIN, so a config left in
+// localStorage here is readable by script on every other page published under the same account.
+// A per-tab copy solves the actual annoyance (reloading and losing it) without that.
+//
+// Versioned key: a shape change is then ignored rather than half-read. And every access is wrapped,
+// because Safari's private mode throws on write and a `file://` page has an opaque origin that can
+// throw on READ — and `npm run intake` produces exactly a file:// page. Storage being unavailable
+// must degrade to "cannot remember", never to a blank page.
+const STORE_KEY = "campaign-intake:config:v1";
+const store = {
+  read() {
+    for (const s of [safeStore(() => sessionStorage), safeStore(() => localStorage)]) {
+      try {
+        const raw = s && s.getItem(STORE_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (e) { /* unreadable is the same as absent */ }
+    }
+    return null;
+  },
+  write(entry, persist) {
+    const s = safeStore(() => (persist ? localStorage : sessionStorage));
+    try { s && s.setItem(STORE_KEY, JSON.stringify(entry)); return !!s; } catch (e) { return false; }
+  },
+  clear() {
+    for (const s of [safeStore(() => sessionStorage), safeStore(() => localStorage)]) {
+      try { s && s.removeItem(STORE_KEY); } catch (e) { /* nothing to do */ }
+    }
+  },
+  available() { return !!safeStore(() => sessionStorage); },
+};
+function safeStore(get) { try { return get(); } catch (e) { return null; } }
+
+/**
+ * Turn pasted/dropped text into a usable config, or into a message that says which stage failed.
+ * Stages are named because "invalid config" is not actionable and "line 12: expected a comma" is.
+ * The last stage is `missingConfigKeys` — the SAME function the fail-closed guard has always used
+ * and the same one `open-intake.js` runs server-side. The guard did not get weaker; it moved to
+ * the door.
+ */
+function ingestConfig(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return { error: "Nothing to read — the file or the box is empty." };
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    const at = jsonErrorContext(raw, e.message);
+    return {
+      error: "That is not valid JSON." + (at ? ` Line ${at.line}, column ${at.column}: ${e.message}` : ` ${e.message}`),
+      excerpt: at && at.excerpt,
+    };
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { error: `A project config is a JSON object; this is ${Array.isArray(parsed) ? "an array" : typeof parsed}.` };
+  }
+  const missing = missingConfigKeys(parsed);
+  if (missing.length) return { cfg: null, missing };
+  return { cfg: parsed, warnings: configWarnings(parsed) };
+}
+
+/**
+ * The empty state — which is now a DOOR, not an error page.
+ *
+ * Layer 1 ships with no config on purpose (R1) and the guard is fail-closed. On a public URL that
+ * same emptiness is the feature: the form is served empty, the config is read in the browser, and
+ * nothing project-specific is ever published or uploaded. The CSP is what makes that a guarantee
+ * rather than a promise — `connect-src 'none'`, so this page cannot send anywhere what you hand it.
+ */
+function ConfigLoader({ missing, onLoad }) {
+  const [text, setText] = React.useState("");
+  const [problem, setProblem] = React.useState(missing ? { missing } : null);
+  const [persist, setPersist] = React.useState(false);
+  const [dropping, setDropping] = React.useState(false);
+  const remembered = store.read();
+
+  function accept(raw, source) {
+    const res = ingestConfig(raw);
+    if (res.error || (res.missing && res.missing.length)) { setProblem(res); return; }
+    setProblem(null);
+    store.write({ savedAt: new Date().toISOString(), source, config: res.cfg }, persist);
+    onLoad(res.cfg, source, res.warnings || []);
+  }
+
+  function takeFile(file) {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = () => accept(String(r.result), file.name);
+    r.onerror = () => setProblem({ error: `Could not read ${file.name}.` });
+    r.readAsText(file);
+  }
+
+  return (
+    <div className="wrap loader">
+      <h1>Campaign Intake</h1>
+      <div className="sub">
+        Video Production agent · this form is <b>Layer 1</b> and ships with no project in it (R1).
+        Load a project config to start. <b>It stays in this browser</b> — the page has no way to send
+        it anywhere (<code>connect-src 'none'</code>).
+      </div>
+
+      <div
+        className={"card drop" + (dropping ? " dropping" : "")}
+        onDragOver={(e) => { e.preventDefault(); setDropping(true); }}
+        onDragLeave={() => setDropping(false)}
+        onDrop={(e) => {
+          e.preventDefault(); setDropping(false);
+          const f = e.dataTransfer.files && e.dataTransfer.files[0];
+          if (f) takeFile(f);
+          else accept(e.dataTransfer.getData("text/plain"), "dropped text");
+        }}
+      >
+        <h2>Load a project config</h2>
+        <p className="hint">
+          The file is <code>projects/&lt;name&gt;/intake-config.json</code> in the agent's repo. Drop
+          it here, choose it, or paste it below.
+        </p>
+        <div className="row">
+          <label className="btn file-btn">
+            Choose a file…
+            <input type="file" accept="application/json,.json" onChange={(e) => takeFile(e.target.files[0])} />
+          </label>
+          {remembered && (
+            <button type="button" className="btn ghost" onClick={() => accept(JSON.stringify(remembered.config), remembered.source || "remembered")}>
+              Use remembered · {(remembered.config && remembered.config.projectLabel) || (remembered.config && remembered.config.project) || "saved config"}
+            </button>
+          )}
+          {remembered && (
+            <button type="button" className="btn ghost" onClick={() => { store.clear(); setProblem(null); setText((t) => t); location.reload(); }}>
+              Forget it
+            </button>
+          )}
+        </div>
+
+        <label htmlFor="cfg-paste">…or paste the JSON</label>
+        <textarea id="cfg-paste" className="mono" value={text} onChange={(e) => setText(e.target.value)} placeholder={'{\n  "project": "…",\n  "channels": { … },\n  "languages": [ … ]\n}'} />
+        <div className="row">
+          <button type="button" className="btn" onClick={() => accept(text, "pasted")}>Use this config</button>
+          <label className="check">
+            <input type="checkbox" checked={persist} onChange={(e) => setPersist(e.target.checked)} />
+            Remember on this browser
+          </label>
+        </div>
+        <p className="hint">
+          {store.available()
+            ? persist
+              ? "Kept until you clear it — including after you close the browser. Avoid on a shared machine."
+              : "Kept for this tab only, and dropped when you close it."
+            : "This browser is not letting the page store anything, so the config will not be remembered."}
+        </p>
+      </div>
+
+      {problem && (
+        <div className="card problem" role="alert">
+          {problem.missing ? (
+            <React.Fragment>
+              <h2>That config is missing {problem.missing.length} required key{problem.missing.length > 1 ? "s" : ""}</h2>
+              <p className="err">Missing: <code>{problem.missing.join(", ")}</code></p>
+              <p className="hint">
+                Most of these are read without a fallback, so the form would crash to a blank page
+                rather than render — and a blank page is the worst failure available here, because it
+                looks like nothing happened. <code>voices</code> and <code>music</code> are the
+                exception: this form does not read them, but a config lacking them describes a
+                project the validator rejects later anyway.
+              </p>
+              <p className="hint">All nine: <code>{REQUIRED_CONFIG_KEYS.join(", ")}</code></p>
+            </React.Fragment>
+          ) : (
+            <React.Fragment>
+              <h2>That config could not be read</h2>
+              <p className="err">{problem.error}</p>
+              {problem.excerpt && <pre className="excerpt">{problem.excerpt}</pre>}
+            </React.Fragment>
+          )}
+        </div>
+      )}
+
+      <div className="card">
+        <h2>What this produces</h2>
+        <p className="hint">
+          A validated <code>campaigns/&lt;name&gt;/intake.json</code> at schemaVersion 2.0, which you
+          download and hand to the agent. It is then checked by
+          <code> scripts/intake-validator.js</code> — reviewer · sign-off · closings · template ·
+          ticket — before any credit is spent. A render block there is not a mistake in this form; it
+          is the form having done its job.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function BrandBar({ cfg, source, onForget }) {
+  const b = cfg.brand || {};
+  return (
+    <header className="brandbar">
+      <div className="wrap">
+        <span className="brandmark">
+          {b.logo ? <img src={b.logo} alt={b.label || cfg.projectLabel || cfg.project} /> : (b.label || cfg.projectLabel || cfg.project)}
+        </span>
+        <span className="brandbar-tag">Campaign Intake · Video Production</span>
+        {/* Which config is driving this form, always visible. With a loader in front, "which
+            project am I filling in?" stops being obvious and starts being worth stating. */}
+        {source && (
+          <span className="brandbar-src">
+            config: {source} · {(cfg.languages || []).length} language(s) · {Object.keys(cfg.templates || {}).length} template(s)
+            {onForget && <button type="button" className="linkish" onClick={onForget}>Forget</button>}
+          </span>
+        )}
+      </div>
+    </header>
+  );
+}
+
+/** A selection with no pipeline behind it. Shown, never hidden: the request is worth recording. */
+const Pending = () => <span className="badge pending" style={{ marginLeft: 6 }}>no pipeline</span>;
+
+/**
+ * Owns the active config, and decides what to render. THE ONLY COMPONENT WITH A BRANCH IN IT.
+ *
+ * Splitting this out is not organisation, it is a bug fix. `App` used to call `useState` before two
+ * early returns and `useMemo` after them, so the number of hooks it ran depended on whether a
+ * config was present. That was harmless for exactly as long as `PROJECT_CONFIG` was a module
+ * constant that could never change — the moment a config can arrive at run time, the same instance
+ * renders with two hooks and then three, and React throws "Rendered more hooks than during the
+ * previous render". Root has a FIXED hook set and returns a different CHILD; Form has no early
+ * return at all.
+ */
+function Root() {
+  // An INJECTED config is the whole session. `npm run intake -- --project X` builds a form for one
+  // project, so it must not read storage, offer another config, or show the loader — there is no
+  // path here from project B's build to project A's intake.
+  const injected = PROJECT_CONFIG && !missingConfigKeys(PROJECT_CONFIG).length;
+  const [state, setState] = useState({
+    cfg: PROJECT_CONFIG,
+    source: PROJECT_CONFIG ? "built in" : null,
+    warnings: [],
+  });
+
+  // A side effect belongs in an effect. It was in a useMemo, which worked only because its input
+  // never changed; with a swappable config the reset has to run on every change, including to null.
+  React.useEffect(() => { applyBrand(state.cfg && state.cfg.brand); }, [state.cfg]);
+
+  const missing = state.cfg ? missingConfigKeys(state.cfg) : null;
+  if (!state.cfg || missing.length) {
+    return (
+      <ConfigLoader
+        missing={state.cfg ? missing : null}
+        onLoad={(cfg, source, warnings) => setState({ cfg, source, warnings })}
+      />
+    );
+  }
+
+  // `key` remounts the form when the config changes. Without it, loading project B after
+  // half-filling the form for project A keeps A's template, languages and channels in state, and
+  // buildIntakeV2 would happily emit a template B does not own.
+  return (
+    <Form
+      key={state.cfg.project + "|" + state.source}
+      cfg={state.cfg}
+      source={state.source}
+      warnings={state.warnings}
+      onForget={injected ? null : () => { store.clear(); setState({ cfg: null, source: null, warnings: [] }); }}
+    />
+  );
+}
+
+/** The form itself. NO EARLY RETURNS HERE — Root has already proved this config is usable. */
+function Form({ cfg, source, warnings, onForget }) {
+  const [s, set] = useState({
+    goal: "", kpis: [], videoTypeKey: "social", template: null,
+    canal: [], execution: ["Video Assembly"], editing: ["remotion"],
+    scriptMode: "Generate", storyboardMode: "Generate", storyboardSkip: "", inspirationMode: "N/A",
+    durationSec: "", aspectRatio: "9:16", outputFormat: OUTPUT_FORMATS[0],
+    creationTypes: [], creationPrompt: "", voMode: "generate", voLangs: [],
+    sheetChannel: "", sheetRecipient: "", signOff: [], uploadKinds: [],
+    campaign: "", ticketNumber: "", ticketLink: "", deadline: "", utm: "",
+    driveFolder: "", count: 1, compliance: [],
+  });
+  const up = (patch) => set((prev) => ({ ...prev, ...patch }));
+
+  const vt = VIDEO_TYPES.find((t) => t.key === s.videoTypeKey);
+  const isSocial = vt.key === "social";
+  const kpiOptions = (cfg.kpis || {})[vt.key] || [];
+  const pending = deriveExecutionPending(s.execution, s.editing);
+  const errors = formErrors(s, cfg);
+  const intake = useMemo(() => buildIntakeV2(s, cfg, new Date().toISOString()), [JSON.stringify(s)]);
+  const est = intake.variations.costEstimate;
+
+  // R3: the canal selection derives the format defaults. Derived, and every one editable.
+  function toggleCanal(label) {
+    const next = toggle(s.canal, label);
+    const specKeys = { Meta: ["instagram", "facebook"], TikTok: ["tiktok"], "YouTube Shorts": ["youtube"], LinkedIn: [] }[label] || [];
+    const first = next.length ? specKeys[0] || null : null;
+    const patch = { canal: next };
+    if (first && cfg.channels[first]) {
+      patch.aspectRatio = cfg.channels[first].ratios[0] || s.aspectRatio;
+    }
+    up(patch);
+  }
+
+  const setSignOff = (lang, field, value) => {
+    const rest = s.signOff.filter((x) => x.lang !== lang);
+    const cur = s.signOff.find((x) => x.lang === lang) || { lang, reviewer: "", at: "" };
+    up({ signOff: [...rest, { ...cur, [field]: value }] });
+  };
+  const signOffOf = (lang) => s.signOff.find((x) => x.lang === lang) || { reviewer: "", at: "" };
+
+  const download = () => {
+    const blob = new Blob([JSON.stringify(intake, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "intake.json"; a.click();
+    // Revoked, which it never was: every download leaked a Blob for the lifetime of the tab, and a
+    // form someone fills for ten variations is a form someone clicks this on ten times.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  // ── What the rail reports ────────────────────────────────────────────────────────────────────
+  //
+  // Not progress. BLOCKS. This form's job is to make the expensive discovery — a reviewer nobody
+  // assigned, an execution with no pipeline, a type that is phase 2 — happen here, for free, before
+  // a credit is spent. So each section reports two counts, and they are different things:
+  //   · fix  — the form refuses to export on it. Malformed.
+  //   · block — well-formed and correct to record, and the validator will refuse to RENDER it.
+  // Conflating the two is the mistake the validator itself is careful not to make.
+  const blocksFor = {
+    "01": vt.phase ? [`${vt.label} is phase ${vt.phase} — recorded, and render-blocked (W3)`] : [],
+    "02": pending.length ? [`${pending.join(", ")} — no pipeline behind ${pending.length > 1 ? "them" : "it"} (W3)`] : [],
+    "03": [
+      ...(s.creationTypes.includes("VoiceOver")
+        ? s.voLangs
+            .filter((code) => reviewerStatusOf(cfg, code) !== "confirmed")
+            .map((code) => `${code} has a pending reviewer (R7 · D2)`)
+        : []),
+      ...(s.creationTypes.includes("VoiceOver")
+        ? s.voLangs
+            .filter((code) => { const so = signOffOf(code); return !(so.reviewer && so.at); })
+            .map((code) => `${code} has no recorded sign-off (W6)`)
+        : []),
+      ...(s.voMode === "translate" && s.creationTypes.includes("VoiceOver") ? ["the dub pipeline is inactive (W5)"] : []),
+    ],
+  };
+  const SECTIONS = [
+    { id: "s00", n: "00", name: "Objectives" },
+    { id: "s01", n: "01", name: "Video type" },
+    { id: "s02", n: "02", name: "Channel" },
+    { id: "s03", n: "03", name: "Content" },
+    { id: "s04", n: "04", name: "Metadata & delivery" },
+    { id: "s05", n: "05", name: "Variations & cost" },
+  ].map((x) => ({ ...x, fix: errors.filter((e) => e.section === x.n), block: blocksFor[x.n] || [] }));
+  const totalBlocks = SECTIONS.reduce((n, x) => n + x.block.length, 0);
+
+  /** Anchors scroll; they do not focus a form control. An error summary that only scrolls is half a fix. */
+  const jumpTo = (id) => (e) => {
+    e.preventDefault();
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    const focusable = el.matches("input, textarea, select") ? el : el.querySelector("input, textarea, select, button");
+    if (focusable) focusable.focus({ preventScroll: true });
+  };
+
+  return (
+    <React.Fragment>
+    <a className="skip" href="#main">Skip to the form</a>
+    <BrandBar cfg={cfg} source={source} onForget={onForget} />
+    <div className="wrap">
+      <h1>New campaign</h1>
+      <div className="sub">Video Production agent · project <b>{cfg.project}</b> · produces a validated <code>intake.json</code> at schemaVersion 2.0 (spec §10)</div>
+      {/* Present-but-empty is not missing, so it never blocks — but a form offering no language at
+          all cannot show you a pending reviewer, which is the block this form exists to surface. */}
+      {(warnings || []).length > 0 && (
+        <div className="card warn-card">
+          <h2>This config loads, with {warnings.length} gap{warnings.length > 1 ? "s" : ""}</h2>
+          {warnings.map((w, i) => <div key={i} className="hint warn-line">{w}</div>)}
+        </div>
+      )}
+      {cfg.brand && cfg.brand.fontsHref && (
+        <div className="hint">
+          This config asks for a webfont from <code>{(() => { try { return new URL(cfg.brand.fontsHref).host; } catch (e) { return cfg.brand.fontsHref; } })()}</code>.
+          It is the only third party a config can reach, and the published page blocks it — there the
+          form uses the font stack the config names.
+        </div>
+      )}
+
+      <div className="shell">
+        <nav className="rail" aria-label="Sections">
+          <ol>
+            {SECTIONS.map((x) => (
+              <li key={x.id} className={x.fix.length ? "blocked" : "done"}>
+                <a href={"#" + x.id} onClick={jumpTo(x.id)}>
+                  <span className="dot" aria-hidden="true"></span>
+                  <span>
+                    <span className="num">{x.n}</span>
+                    <span className="name">{x.name}</span>
+                    {/* The state is a WORD as well as a colour — colour alone is not a status (1.4.1). */}
+                    <span className="state">
+                      {x.fix.length ? `${x.fix.length} to fix` : x.block.length ? `${x.block.length} will block render` : "ok"}
+                    </span>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+
+        <main id="main">
+      {/* Always mounted, empty when clean. A live region that appears at the same instant its text
+          changes is frequently not announced at all. Polite, because it re-renders on every
+          keystroke and assertive would be a stream of interruptions. */}
+      <div className="summary" role="region" aria-live="polite" aria-label="Problems to fix">
+        {errors.length > 0 && (
+          <div className="card problem">
+            <h2>{errors.length} thing{errors.length > 1 ? "s" : ""} to fix before this can be exported</h2>
+            <ol>
+              {errors.map((e, i) => (
+                <li key={i}><a href={"#" + e.field} onClick={jumpTo(e.field)}>{e.section} · {e.message}</a></li>
+              ))}
+            </ol>
+          </div>
+        )}
+      </div>
+
+      <section id="s00" className="card">
+        <h2><span className="n">00</span> Objectives</h2>
+        <label htmlFor="f-goal">What is this campaign for, in your own words?</label>
+        <textarea id="f-goal" value={s.goal} aria-invalid={errors.some((e) => e.field === "f-goal") ? "true" : undefined} onChange={(e) => up({ goal: e.target.value })} placeholder="e.g. Drive trial sign-ups from lapsed users in our main market." />
+        <ChipGroup id="g-kpis" legend={`KPIs for a ${vt.label.toLowerCase()} video`} hint="Recorded, never measured — the agent's deliverable ends at approved files (P1).">
+          {kpiOptions.map((k) => <Chip key={k} on={s.kpis.includes(k)} onClick={() => up({ kpis: toggle(s.kpis, k) })}>{k}</Chip>)}
+          {!kpiOptions.length && <span className="hint">This project declares no KPIs for this video type.</span>}
+        </ChipGroup>
+      </section>
+
+      <section id="s01" className="card">
+        <h2><span className="n">01</span> Video type</h2>
+        <ChipGroup id="g-videotype" legend="Type" radio>
+          {VIDEO_TYPES.map((t) => (
+            <Chip key={t.key} radio on={s.videoTypeKey === t.key} onClick={() => up({ videoTypeKey: t.key, kpis: [], canal: t.key === "social" ? s.canal : [] })}>
+              {t.label}{t.phase ? <Pending /> : null}
+            </Chip>
+          ))}
+        </ChipGroup>
+        <label htmlFor="f-template">Template</label>
+        <select id="f-template" value={s.template || ""} onChange={(e) => up({ template: e.target.value || null })}>
+          <option value="">From scratch</option>
+          {Object.keys(cfg.templates).map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        {vt.phase && <div className="hint">Selectable and recorded — and render-blocked. There is no pipeline behind it yet (W3).</div>}
+      </section>
+
+      <section id="s02" className="card">
+        <h2><span className="n">02</span> Channel</h2>
+        <ChipGroup id="g-execution" legend="Execution — how the video is produced">
+          {EXECUTIONS.map((e) => (
+            <Chip key={e} on={s.execution.includes(e)} onClick={() => up({ execution: toggle(s.execution, e) })}>
+              {e}{IMPLEMENTED_EXECUTIONS.includes(e) ? null : <Pending />}
+            </Chip>
+          ))}
+        </ChipGroup>
+        <ChipGroup id="g-editing" legend="Editing tool">
+          {EDITING.map((e) => (
+            <Chip key={e.value} on={s.editing.includes(e.value)} onClick={() => up({ editing: toggle(s.editing, e.value) })}>
+              {e.label}{IMPLEMENTED_EDITING.includes(e.value) ? null : <Pending />}
+            </Chip>
+          ))}
+        </ChipGroup>
+        {pending.length > 0 && <div className="hint">⛔ <b>{pending.join(", ")}</b> — recorded, and render-blocked. Only Video Assembly on Remotion runs today (W3).</div>}
+
+        <ChipGroup
+          id="g-canal"
+          legend={`Channel — where it ships ${isSocial ? "" : "(social only)"}`}
+          hint={isSocial
+            ? "Selecting a channel derives the format defaults below (R3) — all editable. 'Meta' covers Instagram and Facebook, which are two entries downstream."
+            : `${vt.label} has no channel. With no channel there is no safe-zone check — reported as NOT APPLICABLE, never as passed (F4).`}
+        >
+          {CANAL.map((c) => (
+            <Chip key={c} on={s.canal.includes(c)} disabled={!isSocial} title={isSocial ? undefined : `${vt.label} ships no channel`} onClick={() => toggleCanal(c)}>{c}</Chip>
+          ))}
+        </ChipGroup>
+
+        <div className="grid2">
+          <div><label htmlFor="f-script">Script</label>
+            <select id="f-script" value={s.scriptMode} onChange={(e) => up({ scriptMode: e.target.value })}>{MODES.map((m) => <option key={m} value={m}>{m}</option>)}</select>
+          </div>
+          <div><label htmlFor="f-storyboard">Storyboard (G1)</label>
+            <select id="f-storyboard" value={s.storyboardMode} onChange={(e) => up({ storyboardMode: e.target.value })}>{MODES.map((m) => <option key={m} value={m}>{m}</option>)}</select>
+          </div>
+        </div>
+        {s.storyboardMode === "N/A" && (
+          <React.Fragment>
+            <label htmlFor="f-skip">Type to confirm skipping G1</label>
+            <input id="f-skip" type="text" value={s.storyboardSkip} aria-invalid={errors.some((e) => e.field === "f-skip") ? "true" : undefined} onChange={(e) => up({ storyboardSkip: e.target.value })} placeholder={SKIP_PHRASE} />
+            <div className="hint">Skipping G1 removes the cheap-stills protection — a failed master is then found at video-credit cost (R8).</div>
+          </React.Fragment>
+        )}
+        <div className="grid2">
+          <div><label htmlFor="f-duration">Duration (s)</label>
+            <input id="f-duration" type="number" min="1" value={s.durationSec} onChange={(e) => up({ durationSec: e.target.value })} placeholder="agent proposes" />
+          </div>
+          <div><label htmlFor="f-aspect">Aspect ratio</label>
+            <select id="f-aspect" value={s.aspectRatio} onChange={(e) => up({ aspectRatio: e.target.value })}>{RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}</select>
+          </div>
+        </div>
+        <label htmlFor="f-format">Output format</label>
+        <select id="f-format" value={s.outputFormat} onChange={(e) => up({ outputFormat: e.target.value })}>{OUTPUT_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}</select>
+      </section>
+
+      <section id="s03" className="card">
+        <h2><span className="n">03</span> Content</h2>
+        <ChipGroup id="g-creation" legend="Assets Creation">
+          {CREATION_TYPES.map((t) => <Chip key={t} on={s.creationTypes.includes(t)} onClick={() => up({ creationTypes: toggle(s.creationTypes, t) })}>{t}</Chip>)}
+        </ChipGroup>
+        {s.creationTypes.length > 0 && (
+          <React.Fragment>
+            <label htmlFor="f-prompt">What should be generated?</label>
+            <textarea id="f-prompt" value={s.creationPrompt} onChange={(e) => up({ creationPrompt: e.target.value })} placeholder="e.g. Real people using the product at home — sofa, laptop, natural light." />
+          </React.Fragment>
+        )}
+
+        {s.creationTypes.includes("VoiceOver") && (
+          <React.Fragment>
+            <ChipGroup id="g-vomode" legend="VoiceOver" radio>
+              <Chip radio on={s.voMode === "generate"} onClick={() => up({ voMode: "generate" })}>generate</Chip>
+              <Chip radio on={s.voMode === "translate"} onClick={() => up({ voMode: "translate" })}>translate (dub)<Pending /></Chip>
+            </ChipGroup>
+            {s.voMode === "translate" && <div className="hint">⛔ The dub pipeline is specified and <b>inactive</b> (W5). Dub cost is priced <b>per language</b> and is not covered by the per-video ceiling{est.dubbing && est.dubbing.perLanguageCredits != null ? <React.Fragment> — this project records ≈{est.dubbing.perLanguageCredits} cr/language</React.Fragment> : null}.</div>}
+            <ChipGroup id="g-volangs" legend="Languages" hint="A pending reviewer language can be selected but stays render-blocked until confirmed (R7 · D2).">
+              {cfg.languages.map((l) => (
+                <Chip key={l.code} on={s.voLangs.includes(l.code)} onClick={() => up({ voLangs: toggle(s.voLangs, l.code) })}>
+                  {l.code} <span className={"badge " + (l.reviewer || "pending")}>{l.reviewer || "pending"}</span>
+                </Chip>
+              ))}
+            </ChipGroup>
+
+            {s.voLangs.length > 0 && (
+              <React.Fragment>
+                <label htmlFor="f-sheet">Review sheet — delivery is optional, sign-off is not (W6)</label>
+                <div className="grid2">
+                  <select id="f-sheet" value={s.sheetChannel} onChange={(e) => up({ sheetChannel: e.target.value })}>
+                    <option value="">no channel — delivery is manual</option>
+                    {SHEET_CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <input type="text" aria-label="Review sheet recipient" value={s.sheetRecipient} onChange={(e) => up({ sheetRecipient: e.target.value })} placeholder="channel, doc or address" />
+                </div>
+                {s.voLangs.map((lang) => (
+                  <div key={lang} className="grid2">
+                    <input type="text" aria-label={`${lang} — reviewer who signed off`} value={signOffOf(lang).reviewer} onChange={(e) => setSignOff(lang, "reviewer", e.target.value)} placeholder={`${lang} — reviewer who signed off`} />
+                    <input type="date" aria-label={`${lang} — date of sign-off`} value={signOffOf(lang).at} onChange={(e) => setSignOff(lang, "at", e.target.value)} />
+                  </div>
+                ))}
+                <div className="hint">The sheet is always generated. Leaving a sign-off empty is honest and blocks that language's render — the D2 gate closes on a recorded sign-off, never on a sheet having been sent.</div>
+              </React.Fragment>
+            )}
+          </React.Fragment>
+        )}
+
+        <ChipGroup id="g-upload" legend="Assets Upload" hint="Pick Creation and/or Upload — an intake that creates nothing and uploads nothing has no material to render.">
+          {UPLOAD_KINDS.map((k) => <Chip key={k} on={s.uploadKinds.includes(k)} onClick={() => up({ uploadKinds: toggle(s.uploadKinds, k) })}>{k}</Chip>)}
+        </ChipGroup>
+      </section>
+
+      <section id="s04" className="card">
+        <h2><span className="n">04</span> Campaign metadata &amp; delivery</h2>
+        <div className="grid2">
+          <div><label htmlFor="f-campaign">Campaign name</label><input id="f-campaign" type="text" value={s.campaign} aria-invalid={errors.some((e) => e.field === "f-campaign") ? "true" : undefined} onChange={(e) => up({ campaign: e.target.value })} placeholder="e.g. spring-launch-02" /></div>
+          <div><label htmlFor="f-ticket">Ticket number (required)</label><input id="f-ticket" type="text" required value={s.ticketNumber} aria-invalid={errors.some((e) => e.field === "f-ticket") ? "true" : undefined} onChange={(e) => up({ ticketNumber: e.target.value })} placeholder="e.g. ABC-1234" /></div>
+        </div>
+        <div className="grid2">
+          <div><label htmlFor="f-ticketlink">Ticket link</label><input id="f-ticketlink" type="text" value={s.ticketLink} onChange={(e) => up({ ticketLink: e.target.value })} placeholder="optional" /></div>
+          <div><label htmlFor="f-deadline">Deadline</label><input id="f-deadline" type="date" value={s.deadline} onChange={(e) => up({ deadline: e.target.value })} /></div>
+        </div>
+        <label htmlFor="f-utm">UTM</label>
+        <input id="f-utm" type="text" value={s.utm} onChange={(e) => up({ utm: e.target.value })} placeholder="optional" />
+        <label htmlFor="f-drive">Delivery Drive folder</label>
+        <input id="f-drive" type="text" value={s.driveFolder} aria-invalid={errors.some((e) => e.field === "f-drive") ? "true" : undefined} onChange={(e) => up({ driveFolder: e.target.value })} placeholder={cfg.deliveryDriveDefault} />
+        <div className="hint">
+          Every final file lands in <code>{(s.driveFolder || cfg.deliveryDriveDefault || "<drive>") + "/" + (s.ticketNumber.trim() || "<ticket>") + "/"}</code> —
+          the folder <b>is</b> the ticket number (W4), so a delivery traces back to its request without anyone remembering a rule.
+        </div>
+      </section>
+
+      <section id="s05" className="card">
+        <h2><span className="n">05</span> Variations &amp; cost</h2>
+        <div className="grid2">
+          <div><label htmlFor="f-count">Variations</label><input id="f-count" type="number" min="0" value={s.count} onChange={(e) => up({ count: e.target.value })} /></div>
+          <div><label htmlFor="f-est">Estimate, before any credit is spent</label>
+            <div className="est" id="f-est">≈ <b>{est.totalCredits}</b> cr — master {est.masterCredits} + {intake.variations.count} × {est.perVariationCredits}</div>
+          </div>
+        </div>
+        <div className="hint">
+          USD is <b>not</b> estimated: {est.notCaptured.join(" · ")}.
+          {est.budgetUsd != null && <React.Fragment> The project ceiling is ${est.budgetUsd}/video (I1) and cannot be checked against a credit figure — that check happens with a real price, not a guessed one.</React.Fragment>}
+        </div>
+      </section>
+
+      {totalBlocks > 0 && (
+        <section className="card warn-card">
+          <h2>{totalBlocks} render block{totalBlocks > 1 ? "s" : ""} — recorded, not refused</h2>
+          <p className="hint">
+            These are well-formed and worth capturing. The validator will refuse to RENDER them, which
+            is a different answer from refusing to record them — asking for something the agent cannot
+            build yet is useful information, not a mistake.
+          </p>
+          {SECTIONS.flatMap((x) => x.block.map((b, i) => <div key={x.n + i} className="hint warn-line">{x.n} · {b}</div>))}
+        </section>
+      )}
+
+      <section className="card">
+        <h2><span className="n">→</span> intake.json</h2>
+        <pre tabIndex="0" aria-label="The emitted intake.json">{JSON.stringify(intake, null, 2)}</pre>
+        <div className="hint">Then run <code>scripts/intake-validator.js</code> — the Layer-2 cross-checks (reviewer · sign-off · closings · template · ticket) before any credit. A render block there is not a mistake in this form; it is the form having done its job.</div>
+      </section>
+
+      {/* The ledger. What this will cost and what it will stop, in view the whole way down. */}
+      <div className="ledger">
+        <span className={"figure" + (errors.length ? " blocking" : "")}><b>{errors.length}</b> to fix</span>
+        <span className="figure"><b>{totalBlocks}</b> render block{totalBlocks === 1 ? "" : "s"}</span>
+        <span className="figure">≈ <b>{est.totalCredits}</b> cr{est.budgetUsd != null ? ` · ceiling $${est.budgetUsd}/video` : ""}</span>
+        <span className="actions">
+          <button type="button" className="btn ghost" onClick={() => navigator.clipboard && navigator.clipboard.writeText(JSON.stringify(intake, null, 2))}>Copy JSON</button>
+          <button type="button" className="btn" disabled={errors.length > 0} onClick={download}>Download intake.json</button>
+        </span>
+      </div>
+        </main>
+      </div>
+    </div>
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
+</script>
+</body>
+</html>
