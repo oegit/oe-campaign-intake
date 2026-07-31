@@ -53,7 +53,7 @@
   frame-ancestors is deliberately absent: it is IGNORED in a <meta> policy and GitHub Pages sends no
   CSP header, so the page is framable. Stated rather than faked with a directive that does nothing.
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://unpkg.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://unpkg.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src https://script.google.com https://script.googleusercontent.com; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light" />
 <title>Campaign Intake — Video Production</title>
@@ -563,6 +563,25 @@ function deriveExecutionPending(execution, editing) {
   ];
 }
 
+/**
+ * W4: is the delivery folder still unassigned — a RENDER BLOCK, never an export error.
+ *
+ * The distinction is the one this whole form is built on, and here it is load-bearing rather than
+ * academic. A sanitized public build ships `deliveryDriveDefault: ""` on purpose: a Drive share
+ * link is an access grant, so publishing one on a public page grants access to everyone who opens
+ * it. The person filling the form has no folder to type and no way to learn it. Refusing to export
+ * would therefore make the published form unexportable BY DESIGN — an intake nobody can finish.
+ *
+ * So the intake is emitted with an empty folder, which is well-formed and honest, and:
+ *   · `intake-validator.js` raises a render block — nothing lands anywhere until it is filled;
+ *   · `process-inbox.js` fills it from Layer 2 at ingestion, and the block clears.
+ *
+ * The value never leaves the repo; only the shape does.
+ */
+function deliveryUnassigned(s, cfg) {
+  return !(s && s.driveFolder) && !((cfg || {}).deliveryDriveDefault);
+}
+
 /** The reviewer status languages.yaml declares, which is the only one that governs (R7 · D2). */
 function reviewerStatusOf(cfg, code) {
   const l = (cfg.languages || []).find((x) => x.code === code);
@@ -733,7 +752,10 @@ function formErrors(s, cfg) {
   if ((s.creationTypes || []).includes("VoiceOver") && !(s.voLangs || []).length) at("03", "g-volangs", "VoiceOver needs at least one language");
   if (s.storyboardMode === "N/A" && (s.storyboardSkip || "").trim().toUpperCase() !== SKIP_PHRASE)
     at("02", "f-skip", `to skip G1, type exactly: ${SKIP_PHRASE} (R8)`);
-  if (!s.driveFolder && !cfg.deliveryDriveDefault) at("04", "f-drive", "a delivery Drive folder is required (W4)");
+  // NOT an error, deliberately — see `deliveryBlocked` below. A missing folder is unassigned, not
+  // malformed, and refusing to export on it would make the published form unexportable by design:
+  // a sanitized public build ships `deliveryDriveDefault: ""` because a Drive share link is an
+  // access grant and publishing one grants access.
   return e;
 }
 
@@ -746,13 +768,46 @@ function formErrors(s, cfg) {
  */
 const formErrorMessages = (s, cfg) => formErrors(s, cfg).map((x) => `${x.section} · ${x.message}`);
 
+// ── Submission (decision X2) ──────────────────────────────────────────────────────────────────
+
+/**
+ * The body posted to the submission endpoint.
+ *
+ * It lives here, not in the HTML, for the same reason `buildIntakeV2` does: while the emitting code
+ * sat inside a React component nothing could see its output, and the form went on writing
+ * `schemaVersion: "1.0"` for weeks after everything else had moved. The `fetch` stays in the HTML —
+ * it needs the DOM and a network — but the SHAPE of what travels is testable, so it is tested.
+ *
+ * The token is not a secret and this file should not pretend otherwise: it is embedded in a public
+ * page, so anyone who views source has it. It stops crawlers and stray posts. What actually protects
+ * the inbox is that the endpoint only writes, validates, caps size and returns no data.
+ */
+function buildSubmission(intake, token) {
+  return {
+    token: token || null,
+    submittedAt: new Date().toISOString(),
+    intake: intake,
+  };
+}
+
+/**
+ * Why this intake may not be submitted yet, as sentences.
+ *
+ * The same bar as the download button and not a stricter one: a render BLOCK is not a reason to
+ * refuse a submission — a blocked intake is exactly the kind worth recording, and refusing it here
+ * would push the discovery back to a human inbox. Only malformed stops.
+ */
+function submissionErrors(s, cfg) {
+  return formErrorMessages(s, cfg);
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     VIDEO_TYPES, EXECUTIONS, IMPLEMENTED_EXECUTIONS, EDITING, IMPLEMENTED_EDITING, CANAL,
     MODES, RATIOS, OUTPUT_FORMATS, CREATION_TYPES, UPLOAD_KINDS, SHEET_CHANNELS, SKIP_PHRASE,
     REQUIRED_CONFIG_KEYS, missingConfigKeys, configWarnings, jsonErrorContext,
-    deriveExecutionPending, reviewerStatusOf,
-    estimate, buildIntakeV2, formErrors, formErrorMessages,
+    deriveExecutionPending, deliveryUnassigned, reviewerStatusOf,
+    estimate, buildIntakeV2, formErrors, formErrorMessages, buildSubmission, submissionErrors,
     luminance, contrast, onColorFor, tint, shade, accessibleBrandText, ratioReport,
   };
 }
@@ -773,7 +828,158 @@ const { useState, useMemo } = React;
 // one key the form dereferences renders NOTHING, which is worse, because a blank page looks like
 // nothing happened. A shipped project config was missing `channels` and `sceneCostEstimate` and its
 // form had never rendered at all.
-const PROJECT_CONFIG = null;
+const PROJECT_CONFIG = {
+  "project": "open-english",
+  "projectLabel": "Open English",
+  "brand": {
+    "label": "Open English",
+    "colors": {
+      "primary": "#0066FF",
+      "secondary": "#FF6600"
+    },
+    "fonts": {
+      "display": "Poppins, Arial, Helvetica, sans-serif",
+      "body": "Wix Madefor Text, Arial, Helvetica, sans-serif"
+    }
+  },
+  "channels": {
+    "youtube": {
+      "ratios": [
+        "9:16",
+        "16:9"
+      ],
+      "durations": [
+        15,
+        30,
+        60
+      ],
+      "subtitle": "burned+srt"
+    },
+    "instagram": {
+      "ratios": [
+        "9:16",
+        "4:5",
+        "1:1"
+      ],
+      "durations": [
+        15,
+        30
+      ],
+      "subtitle": "burned+srt"
+    },
+    "facebook": {
+      "ratios": [
+        "9:16",
+        "4:5",
+        "1:1"
+      ],
+      "durations": [
+        15,
+        30
+      ],
+      "subtitle": "burned+srt"
+    },
+    "tiktok": {
+      "ratios": [
+        "9:16"
+      ],
+      "durations": [
+        15,
+        30
+      ],
+      "subtitle": "burned+srt"
+    }
+  },
+  "languages": [
+    {
+      "code": "es-419",
+      "label": "Spanish — Latin America",
+      "market": "Latin America",
+      "reviewer": "confirmed"
+    },
+    {
+      "code": "pt-BR",
+      "label": "Portuguese — Brazil",
+      "market": "Brazil",
+      "reviewer": "confirmed"
+    },
+    {
+      "code": "es-ES",
+      "label": "Spanish — Spain",
+      "market": "Spain",
+      "reviewer": "confirmed"
+    },
+    {
+      "code": "tr",
+      "label": "Turkish",
+      "market": "Turkey",
+      "reviewer": "confirmed"
+    }
+  ],
+  "voices": [
+    {
+      "ref": "andres",
+      "provider": "fish-audio",
+      "kind": "cloned",
+      "role": "narrator"
+    }
+  ],
+  "music": {
+    "source": "OE licensed company library (music.md)",
+    "license": "confirmed"
+  },
+  "templates": {},
+  "kpis": {
+    "tv": [
+      "Reach",
+      "Frequency",
+      "Brand lift"
+    ],
+    "social": [
+      "Hook rate",
+      "Hold rate",
+      "CTR",
+      "Saves / Shares"
+    ],
+    "youtube": [
+      "Watch time",
+      "Avg % viewed",
+      "CTR"
+    ],
+    "platform": [
+      "Activation",
+      "Feature adoption",
+      "Completion rate"
+    ],
+    "general": []
+  },
+  "ceilings": {
+    "socialPerVideoUSD": 10
+  },
+  "sceneCostEstimate": {
+    "locked": 0,
+    "parametrized": 0,
+    "slot": 7.5
+  },
+  "deliveryDriveDefault": ""
+};
+
+// ── SUBMIT_ENDPOINT — Layer 1 SHIPS THIS EMPTY TOO (decision X2) ────────────────────────────
+//
+// The submit code below exists in Layer 1 ALWAYS, and here is why that is safe rather than sloppy:
+// this file's CSP declares `connect-src 'none'`, so the call cannot fire. Not "does not" — cannot.
+// The browser refuses it, which is a property you can check from the console instead of a promise
+// you have to believe. `scripts/check-layer1-public.js` asserts both halves every run: these two
+// literals are `null` here, and the policy is closed here.
+//
+// A published build replaces both literals AND widens `connect-src` to the endpoint's two origins,
+// in `scripts/publish-intake.js`. Nothing else in the policy moves.
+//
+// THE TOKEN IS NOT A SECRET. It travels inside a public page, so anyone who views source has it.
+// It stops crawlers and stray posts and nothing else; what protects the inbox is that the endpoint
+// only writes, validates the shape, caps the size, and returns no data at all.
+const SUBMIT_ENDPOINT = "https://script.google.com/macros/s/AKfycbyViVdZjl14GYlfvE2k0utXNsmy-p9VGye3iSMmZ-HCZBaI4mXcVy2iGbtGOCMwf1GM7g/exec";
+const SUBMIT_TOKEN = "6f599d561b0355f66efb5040a60cfeb68ae5fc9700813081";
 
 /**
  * The complete brand contract with Layer 2: SIX inputs, and a seventh would be a contract change
@@ -1190,6 +1396,36 @@ function Form({ cfg, source, warnings, onForget }) {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
+  // ── Submitting (decision X2) ─────────────────────────────────────────────────────────────────
+  //
+  // `sent` is a small state machine, not a boolean: "sending", "sent" and "failed" are three
+  // different things to a person who has just spent twenty minutes filling this in, and collapsing
+  // them is how a form loses somebody's work quietly.
+  //
+  // ON FAILURE THE DOWNLOAD COMES BACK, with the reason attached. Every part of this call is
+  // outside our control — a network, a Google deployment, a redirect, an account setting — so the
+  // interesting case is not the happy one. A filled form is never lost: the worst outcome is the
+  // behaviour this page had yesterday, plus an explanation.
+  const [sent, setSent] = useState(null);
+  const submit = async () => {
+    setSent({ state: "sending" });
+    try {
+      // `text/plain` on purpose: Apps Script cannot answer a CORS preflight, and a JSON content
+      // type is what triggers one. This keeps it a simple request.
+      const res = await fetch(SUBMIT_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(buildSubmission(intake, SUBMIT_TOKEN)),
+      });
+      if (!res.ok) throw new Error(`the endpoint answered ${res.status}`);
+      const body = await res.json().catch(() => null);
+      if (!body || !body.ok) throw new Error((body && body.error) || "the endpoint answered without confirming it stored anything");
+      setSent({ state: "sent", file: body.file || null });
+    } catch (e) {
+      setSent({ state: "failed", why: String((e && e.message) || e) });
+    }
+  };
+
   // ── What the rail reports ────────────────────────────────────────────────────────────────────
   //
   // Not progress. BLOCKS. This form's job is to make the expensive discovery — a reviewer nobody
@@ -1214,6 +1450,9 @@ function Form({ cfg, source, warnings, onForget }) {
         : []),
       ...(s.voMode === "translate" && s.creationTypes.includes("VoiceOver") ? ["the dub pipeline is inactive (W5)"] : []),
     ],
+    "04": deliveryUnassigned(s, cfg)
+      ? ["the delivery Drive folder is unassigned — the agent fills it from the project config at ingestion (W4)"]
+      : [],
   };
   const SECTIONS = [
     { id: "s00", n: "00", name: "Objectives" },
@@ -1242,6 +1481,24 @@ function Form({ cfg, source, warnings, onForget }) {
     <div className="wrap">
       <h1>New campaign</h1>
       <div className="sub">Video Production agent · project <b>{cfg.project}</b> · produces a validated <code>intake.json</code> at schemaVersion 2.0 (spec §10)</div>
+      {/* Where the data goes, stated on the page that sends it — and stated DIFFERENTLY in the two
+          builds, because the two builds do different things. A page that keeps yesterday's promise
+          after gaining a network call is worse than one that never made the promise. */}
+      <div className="sub">
+        {SUBMIT_ENDPOINT ? (
+          <React.Fragment>
+            <b>Where this goes:</b> pressing <b>Start Project</b> sends this intake — and only this
+            intake — to the team's submission endpoint, which files it for the person who runs the
+            agent. Nothing else on this page is sent, and nothing is sent until you press it. The
+            policy this page declares allows that one destination and no other.
+          </React.Fragment>
+        ) : (
+          <React.Fragment>
+            <b>Nothing leaves this browser.</b> This build has no endpoint to send to and its policy
+            forbids opening one (<code>connect-src 'none'</code>). You finish by downloading the file.
+          </React.Fragment>
+        )}
+      </div>
       {/* Present-but-empty is not missing, so it never blocks — but a form offering no language at
           all cannot show you a pending reviewer, which is the block this form exists to surface. */}
       {(warnings || []).length > 0 && (
@@ -1447,11 +1704,20 @@ function Form({ cfg, source, warnings, onForget }) {
         <label htmlFor="f-utm">UTM</label>
         <input id="f-utm" type="text" value={s.utm} onChange={(e) => up({ utm: e.target.value })} placeholder="optional" />
         <label htmlFor="f-drive">Delivery Drive folder</label>
-        <input id="f-drive" type="text" value={s.driveFolder} aria-invalid={errors.some((e) => e.field === "f-drive") ? "true" : undefined} onChange={(e) => up({ driveFolder: e.target.value })} placeholder={cfg.deliveryDriveDefault} />
+        <input id="f-drive" type="text" value={s.driveFolder} onChange={(e) => up({ driveFolder: e.target.value })} placeholder={cfg.deliveryDriveDefault || "leave blank — the agent fills this in"} />
         <div className="hint">
           Every final file lands in <code>{(s.driveFolder || cfg.deliveryDriveDefault || "<drive>") + "/" + (s.ticketNumber.trim() || "<ticket>") + "/"}</code> —
           the folder <b>is</b> the ticket number (W4), so a delivery traces back to its request without anyone remembering a rule.
         </div>
+        {deliveryUnassigned(s, cfg) && (
+          <div className="hint">
+            <b>Leave this blank if you do not know it.</b> This form is published without the project's
+            Drive folder in it on purpose — a Drive link is an access grant, and a public page carrying
+            one hands that access to whoever opens it. The agent fills the folder from the project
+            config when it takes the intake in, and until then the run is blocked rather than
+            delivered somewhere nobody chose.
+          </div>
+        )}
       </section>
 
       <section id="s05" className="card">
@@ -1493,9 +1759,30 @@ function Form({ cfg, source, warnings, onForget }) {
         <span className="figure">≈ <b>{est.totalCredits}</b> cr{est.budgetUsd != null ? ` · ceiling $${est.budgetUsd}/video` : ""}</span>
         <span className="actions">
           <button type="button" className="btn ghost" onClick={() => navigator.clipboard && navigator.clipboard.writeText(JSON.stringify(intake, null, 2))}>Copy JSON</button>
-          <button type="button" className="btn" disabled={errors.length > 0} onClick={download}>Download intake.json</button>
+          {/* The download is always here when there is no endpoint, and comes BACK when a send
+              fails. It is never the thing that disappears. */}
+          {(!SUBMIT_ENDPOINT || (sent && sent.state === "failed")) && (
+            <button type="button" className="btn" disabled={errors.length > 0} onClick={download}>Download intake.json</button>
+          )}
+          {SUBMIT_ENDPOINT && (sent && sent.state === "sent"
+            ? <span className="figure">✅ sent{sent.file ? ` · ${sent.file}` : ""}</span>
+            : <button type="button" className="btn" disabled={errors.length > 0 || (sent && sent.state === "sending")} onClick={submit}>
+                {sent && sent.state === "sending" ? "Sending…" : sent && sent.state === "failed" ? "Try sending again" : "Start Project"}
+              </button>)}
         </span>
       </div>
+
+      {SUBMIT_ENDPOINT && sent && sent.state === "failed" && (
+        <section className="card problem" role="alert">
+          <h2>That did not send — and nothing is lost</h2>
+          <p className="err">{sent.why}</p>
+          <p className="hint">
+            Use <b>Download intake.json</b> instead and send the file to whoever runs the agent. The
+            form is unchanged and you can try again; the download and the submission carry exactly
+            the same document.
+          </p>
+        </section>
+      )}
         </main>
       </div>
     </div>
