@@ -90,8 +90,12 @@
     /* 1 · primitives */
     --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 44px;
     --r-sm: 8px; --r-md: 12px; --r-lg: 20px; --r-pill: 999px;
-    --fs-xs: 11px; --fs-sm: 13px; --fs-base: 15px; --fs-md: 17px; --fs-lg: 20px; --fs-xl: 30px;
-    --fs-title: 21px;   /* el título de sección: 4pt sobre --fs-md */
+    --fs-xs: 11px; --fs-sm: 13px; --fs-base: 15px; --fs-md: 17px; --fs-lg: 20px; --fs-xl: 40px;
+    /* El título de sección subió 8px (21 → 29) y con él el H1 (30 → 40). Los dos a la vez, porque
+       el escalón entre ambos es lo que hace que la página tenga cabeza: a 29 y 30 se leían como el
+       mismo nivel y el H1 dejaba de mandar. Ambos van en 700 — el peso ya no distingue, lo hace
+       el tamaño (Helvetica Neue, que es la que de verdad renderiza, no tiene 600). */
+    --fs-title: 29px;
     /* El label es una etiqueta callada, no un título: chico, en caja alta, con tracking. */
     --fs-label: 11px;
     --control-h: 52px;
@@ -152,6 +156,17 @@
        seleccionado no puede ser una píldora rellena con texto blanco. Lo que sí pasa es
        tinte + borde + el azul oscurecido como texto: 4.63:1. */
     --brand: #3385ff;
+    /* El color que se LEE encima del primario, y Layer 1 no lo tenía declarado — sólo lo escribía
+       applyBrand() cuando un proyecto traía marca, así que sin config `var(--brand-on)` quedaba sin
+       valor y el chip seleccionado heredaba el color que hubiera. Ahora la banda entera se pinta
+       con el par, de modo que el hueco pasaba de raro a ilegible. Es el mismo cálculo que
+       onColorFor() hace, resuelto para este azul: blanco da 3.53:1 y negro 5.94:1, así que gana
+       negro. Medido, no elegido — y sobre un primario más oscuro el mismo cálculo devuelve blanco,
+       que es justo por qué esto no puede ser una constante escrita a mano.
+       (El primer intento de este comentario citaba el hex de un proyecto real como ejemplo y
+       check-layer1-public.js lo rechazó en la primera corrida: un color de marca en un archivo de
+       Layer 1 es un proyecto dentro de Layer 1, esté en código o en prosa.) */
+    --brand-on: #000000;
     --brand-soft: #eff5ff;
     --brand-text: #296ccf;   /* DERIVADO: el azul oscurecido hasta leerse sobre su tinte */
     --brand-deep: #2868c7;   /* DERIVADO: el extremo oscuro */
@@ -191,13 +206,19 @@
   .skip:focus { left: var(--sp-4); top: var(--sp-4); z-index: 20; background: var(--surface); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); }
 
   /* ── La banda ─────────────────────────────────────────────────────────────────────────────
-     Ya no es un degradado de marca: es una barra de papel con una regla fina abajo. */
-  .brandbar { background: var(--surface); border-bottom: 1px solid var(--line); }
+     La marca ocupa la banda entera: fondo primario, y encima el color que onColorFor() MIDE.
+     TODO el texto de la banda va a plena fuerza, sin opacidad — bajar el tag al 80% para
+     jerarquizarlo le quitaría justo el contraste que se acaba de medir (blanco sobre el azul de
+     OE son 4.83:1, y al 80% caen a ~3.9, bajo AA para 13px). La jerarquía la hace el tamaño y la
+     regla divisoria, que es lo único que sí puede ser tenue: no lleva texto. */
+  .brandbar { background: var(--brand); color: var(--brand-on); }
   .brandbar .wrap { display: flex; align-items: center; gap: var(--sp-3); padding-top: var(--sp-4); padding-bottom: var(--sp-4); flex-wrap: wrap; }
   .brandmark { font-family: var(--font-titles); font-weight: 700; font-size: var(--fs-md); letter-spacing: -.015em; }
   .brandmark img { height: 24px; width: auto; display: block; }
-  .brandbar-tag { font-size: var(--fs-sm); color: var(--muted); border-left: 1px solid var(--line-strong); padding-left: var(--sp-3); }
-  .brandbar-src { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); margin-left: auto; letter-spacing: .02em; }
+  .brandbar-tag { font-size: var(--fs-sm); padding-left: var(--sp-3);
+                  border-left: 1px solid var(--brand-on);
+                  border-left-color: color-mix(in srgb, var(--brand-on) 40%, transparent); }
+  .brandbar-src { font-family: var(--font-mono); font-size: var(--fs-xs); margin-left: auto; letter-spacing: .02em; }
   .linkish { background: none; border: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; padding: 0 0 0 var(--sp-2); }
 
   h1 { font-family: var(--font-titles); font-size: var(--fs-xl); font-weight: 700; line-height: 1.12; letter-spacing: -.025em; margin: var(--sp-4) 0 var(--sp-2); }
@@ -252,8 +273,8 @@
           padding: var(--sp-6); margin-bottom: var(--sp-4); scroll-margin-top: var(--sp-5); }
   /* El número va ARRIBA, no al lado — igual que en el riel, para que el mismo par (número,
      nombre) se lea igual en los dos lugares y saltar de uno a otro no exija releer. */
-  .card > h2 { font-family: var(--font-titles); font-size: var(--fs-title); font-weight: 500;
-               margin: 0 0 var(--sp-5); letter-spacing: -.015em; line-height: 1.2; }
+  .card > h2 { font-family: var(--font-titles); font-size: var(--fs-title); font-weight: 700;
+               margin: 0 0 var(--sp-5); letter-spacing: -.02em; line-height: 1.15; }
   .card > h2 .n { display: block; font-family: var(--font-mono); font-size: var(--fs-xs);
                   font-weight: 400; color: var(--muted); letter-spacing: .08em; margin-bottom: var(--sp-1); }
   .card:focus-within { border-color: var(--line-strong); }
@@ -394,7 +415,10 @@
   }
   @media (max-width: 640px) {
     .wrap { padding: var(--sp-4); }
-    :root { --fs-xl: 24px; --sp-6: 20px; --control-h: 48px; }
+    /* La escala grande baja en el teléfono, y BAJAN LAS DOS: subir el H1 a 40 y dejar el título
+       de sección en 29 aquí pondría dos titulares casi del ancho de la pantalla, uno detrás del
+       otro. El escalón se conserva, en proporción. */
+    :root { --fs-xl: 30px; --fs-title: 23px; --sp-6: 20px; --control-h: 48px; }
     .ledger .actions { margin-left: 0; width: 100%; }
     .ledger .actions .btn { flex: 1; }
   }
@@ -854,15 +878,15 @@ function formErrors(s, cfg) {
   const vt = VIDEO_TYPES.find((t) => t.key === s.videoTypeKey);
   if (!s.goal || !s.goal.trim()) at("00", "f-goal", "the objective in your own words is required");
   if (!s.campaign || !s.campaign.trim()) at("04", "f-campaign", "campaign name is required");
-  if (!s.ticketNumber || !s.ticketNumber.trim()) at("04", "f-ticket", "ticket number is required — it is also the delivery folder name (W4)");
+  if (!s.ticketNumber || !s.ticketNumber.trim()) at("04", "f-ticket", "ticket number is required — your files are delivered in a folder named after it");
   if (!(s.execution || []).length) at("02", "g-execution", "pick at least one execution");
-  if (vt && vt.key === "social" && !(s.canal || []).length) at("02", "g-canal", "a Social Media video needs at least one channel (W1)");
-  if (vt && vt.key !== "social" && (s.canal || []).length) at("02", "g-canal", `channels belong to Social Media only — '${vt.label}' cannot carry them (W1)`);
+  if (vt && vt.key === "social" && !(s.canal || []).length) at("02", "g-canal", "a Social Media video needs at least one channel");
+  if (vt && vt.key !== "social" && (s.canal || []).length) at("02", "g-canal", `channels belong to Social Media only — '${vt.label}' cannot carry them`);
   if (!(s.creationTypes || []).length && !(s.uploadKinds || []).length)
-    at("03", "g-creation", "pick Assets Creation and/or Assets Upload — an intake that creates nothing and uploads nothing has no material to render");
+    at("03", "g-creation", "pick Assets Creation and/or Assets Upload — a brief that creates nothing and uploads nothing leaves us nothing to work with");
   if ((s.creationTypes || []).includes("VoiceOver") && !(s.voLangs || []).length) at("03", "g-volangs", "VoiceOver needs at least one language");
   if (s.storyboardMode === "N/A" && (s.storyboardSkip || "").trim().toUpperCase() !== SKIP_PHRASE)
-    at("02", "f-skip", `to skip G1, type exactly: ${SKIP_PHRASE} (R8)`);
+    at("02", "f-skip", `to skip the storyboard, type exactly: ${SKIP_PHRASE}`);
   // NOT an error, deliberately — see `deliveryBlocked` below. A missing folder is unassigned, not
   // malformed, and refusing to export on it would make the published form unexportable by design:
   // a sanitized public build ships `deliveryDriveDefault: ""` because a Drive share link is an
@@ -1310,7 +1334,7 @@ function ConfigLoader({ missing, onLoad }) {
           else accept(e.dataTransfer.getData("text/plain"), "dropped text");
         }}
       >
-        <h2>Load a project config</h2>
+        <h2>Load a Project Config</h2>
         <p className="hint">
           The file is <code>projects/&lt;name&gt;/intake-config.json</code> in the agent's repo. Drop
           it here, choose it, or paste it below.
@@ -1354,7 +1378,8 @@ function ConfigLoader({ missing, onLoad }) {
         <div className="card problem" role="alert">
           {problem.missing ? (
             <React.Fragment>
-              <h2>That config is missing {problem.missing.length} required key{problem.missing.length > 1 ? "s" : ""}</h2>
+              <h2>Missing Required Keys</h2>
+              <p className="hint">This config is missing {problem.missing.length} key{problem.missing.length > 1 ? "s" : ""} the form cannot open without.</p>
               <p className="err">Missing: <code>{problem.missing.join(", ")}</code></p>
               <p className="hint">
                 Most of these are read without a fallback, so the form would crash to a blank page
@@ -1367,7 +1392,7 @@ function ConfigLoader({ missing, onLoad }) {
             </React.Fragment>
           ) : (
             <React.Fragment>
-              <h2>That config could not be read</h2>
+              <h2>Config Could Not Be Read</h2>
               <p className="err">{problem.error}</p>
               {problem.excerpt && <pre className="excerpt">{problem.excerpt}</pre>}
             </React.Fragment>
@@ -1376,7 +1401,7 @@ function ConfigLoader({ missing, onLoad }) {
       )}
 
       <div className="card">
-        <h2>What this produces</h2>
+        <h2>What This Produces</h2>
         <p className="hint">
           A validated <code>campaigns/&lt;name&gt;/intake.json</code> at schemaVersion 2.0, which you
           download and hand to the agent. It is then checked by
@@ -1397,7 +1422,7 @@ function BrandBar({ cfg, source, onForget }) {
         <span className="brandmark">
           {b.logo ? <img src={b.logo} alt={b.label || cfg.projectLabel || cfg.project} /> : (b.label || cfg.projectLabel || cfg.project)}
         </span>
-        <span className="brandbar-tag">Campaign Intake · Video Production</span>
+        <span className="brandbar-tag">Agent: Video Production</span>
         {/* Which config is driving this form, always visible. With a loader in front, "which
             project am I filling in?" stops being obvious and starts being worth stating. */}
         {source && (
@@ -1558,33 +1583,47 @@ function Form({ cfg, source, warnings, onForget }) {
   //   · fix  — the form refuses to export on it. Malformed.
   //   · block — well-formed and correct to record, and the validator will refuse to RENDER it.
   // Conflating the two is the mistake the validator itself is careful not to make.
+  //
+  // ── WHO THIS LIST IS FOR, AND WHAT THAT COST IT ──────────────────────────────────────────────
+  // It reads to somebody in marketing filling in a brief, not to the pipeline. Every entry used to
+  // carry the decision code that motivated it (W3, W5, R7 · D2, W6, W4) and the word "render-block",
+  // which name a document that reader does not have. Same facts, said in their language.
+  //
+  // AND THE DELIVERY-FOLDER BLOCK IS GONE FROM HERE — deliberately, not by trimming. It fires on
+  // EVERY submission of the published form by design: `deliveryDriveDefault` is published empty
+  // because a Drive link is an access grant, and `process-inbox.js` fills it from Layer 2 at
+  // ingestion. So the form was telling every single person that their brief had one problem, about
+  // a field they cannot see, which the agent resolves without them. It is still a render block and
+  // `intake-validator.js` still raises it — this is the FORM's list, not the validator's, and the
+  // two answer different questions. A block nobody can act on is noise wearing a warning's clothes.
   const blocksFor = {
-    "01": vt.phase ? [`${vt.label} is phase ${vt.phase} — recorded, and render-blocked (W3)`] : [],
-    "02": pending.length ? [`${pending.join(", ")} — no pipeline behind ${pending.length > 1 ? "them" : "it"} (W3)`] : [],
+    "01": vt.phase ? [`${vt.label}: we record the request, but we do not produce them yet.`] : [],
+    "02": pending.length ? [`${pending.join(", ")}: there is no production line behind ${pending.length > 1 ? "these" : "this"} yet.`] : [],
     "03": [
       ...(s.creationTypes.includes("VoiceOver")
         ? s.voLangs
             .filter((code) => reviewerStatusOf(cfg, code) !== "confirmed")
-            .map((code) => `${code} has a pending reviewer (R7 · D2)`)
+            .map((code) => `Voice-over in ${code}: nobody is assigned to review this language yet.`)
         : []),
       ...(s.creationTypes.includes("VoiceOver")
         ? s.voLangs
             .filter((code) => { const so = signOffOf(code); return !(so.reviewer && so.at); })
-            .map((code) => `${code} has no recorded sign-off (W6)`)
+            .map((code) => `Voice-over in ${code}: waiting on a native speaker to approve the script.`)
         : []),
-      ...(s.voMode === "translate" && s.creationTypes.includes("VoiceOver") ? ["the dub pipeline is inactive (W5)"] : []),
+      ...(s.voMode === "translate" && s.creationTypes.includes("VoiceOver")
+        ? ["Dubbing an existing voice-over into another language is not available yet."]
+        : []),
     ],
-    "04": deliveryUnassigned(s, cfg)
-      ? ["the delivery Drive folder is unassigned — the agent fills it from the project config at ingestion (W4)"]
-      : [],
   };
+  // Title Case, all of them — the rail and the section heading show the SAME pair (number, name),
+  // so a mix of "Video type" here and "Video Type" there would read as two different things.
   const SECTIONS = [
     { id: "s00", n: "00", name: "Objectives" },
-    { id: "s01", n: "01", name: "Video type" },
+    { id: "s01", n: "01", name: "Video Type" },
     { id: "s02", n: "02", name: "Channel" },
     { id: "s03", n: "03", name: "Content" },
-    { id: "s04", n: "04", name: "Metadata & delivery" },
-    { id: "s05", n: "05", name: "Variations & cost" },
+    { id: "s04", n: "04", name: "Metadata & Delivery" },
+    { id: "s05", n: "05", name: "Variations & Cost" },
   ].map((x) => ({
     ...x,
     fix: errors.filter((e) => e.section === x.n),
@@ -1632,31 +1671,26 @@ function Form({ cfg, source, warnings, onForget }) {
     <a className="skip" href="#main">Skip to the form</a>
     <BrandBar cfg={cfg} source={source} onForget={onForget} />
     <div className="wrap">
-      <h1>New campaign</h1>
-      <div className="sub">Video Production agent · project <b>{cfg.project}</b> · produces a validated <code>intake.json</code> at schemaVersion 2.0 (spec §10)</div>
-      {/* Where the data goes, stated on the page that sends it — and stated DIFFERENTLY in the two
-          builds, because the two builds do different things. A page that keeps yesterday's promise
-          after gaining a network call is worse than one that never made the promise. */}
+      <h1>Campaign Intake</h1>
+      {/* Where the data goes, on the page that sends it — ONE LINE, and it stays.
+          The two paragraphs that used to sit here went out because they addressed the wrong reader:
+          "produces a validated intake.json at schemaVersion 2.0 (spec §10)" is a note from the
+          pipeline to itself, on a form filled in by somebody in marketing. What did NOT go out is
+          the destination. A public form that collects answers and does not say where they land is
+          worse than one that says it badly, and one sentence is not a paragraph. It still reads
+          DIFFERENTLY per build, because the two builds do different things: a page that keeps
+          yesterday's promise after gaining a network call is worse than one that never made it. */}
       <div className="sub">
-        {SUBMIT_ENDPOINT ? (
-          <React.Fragment>
-            <b>Where this goes:</b> pressing <b>Start Project</b> sends this intake — and only this
-            intake — to the team's submission endpoint, which files it for the person who runs the
-            agent. Nothing else on this page is sent, and nothing is sent until you press it. The
-            policy this page declares allows that one destination and no other.
-          </React.Fragment>
-        ) : (
-          <React.Fragment>
-            <b>Nothing leaves this browser.</b> This build has no endpoint to send to and its policy
-            forbids opening one (<code>connect-src 'none'</code>). You finish by downloading the file.
-          </React.Fragment>
-        )}
+        {SUBMIT_ENDPOINT
+          ? <React.Fragment>Your brief goes to the Video Production team. Nothing is sent until you press <b>Start Project</b>.</React.Fragment>
+          : <React.Fragment>Nothing leaves this browser — this build has no way to send. You finish by downloading the file.</React.Fragment>}
       </div>
       {/* Present-but-empty is not missing, so it never blocks — but a form offering no language at
           all cannot show you a pending reviewer, which is the block this form exists to surface. */}
       {(warnings || []).length > 0 && (
         <div className="card warn-card">
-          <h2>This config loads, with {warnings.length} gap{warnings.length > 1 ? "s" : ""}</h2>
+          <h2>Config Loaded, With Gaps</h2>
+          <p className="hint">{warnings.length} thing{warnings.length > 1 ? "s are" : " is"} present but empty. Nothing is blocked.</p>
           {warnings.map((w, i) => <div key={i} className="hint warn-line">{w}</div>)}
         </div>
       )}
@@ -1723,7 +1757,7 @@ function Form({ cfg, source, warnings, onForget }) {
         <h2><span className="n">00</span> Objectives</h2>
         <label htmlFor="f-goal">What is this campaign for, in your own words?</label>
         <textarea id="f-goal" value={s.goal} aria-invalid={errors.some((e) => e.field === "f-goal") ? "true" : undefined} onChange={(e) => up({ goal: e.target.value })} placeholder="e.g. Drive trial sign-ups from lapsed users in our main market." />
-        <ChipGroup id="g-kpis" legend={`KPIs for a ${vt.label.toLowerCase()} video`} hint="Recorded, never measured — the agent's deliverable ends at approved files (P1).">
+        <ChipGroup id="g-kpis" legend={`KPIs for a ${vt.label.toLowerCase()} video`} hint="Recorded with your brief. We do not measure them — the work ends at approved files.">
           {kpiOptions.map((k) => <Chip key={k} on={s.kpis.includes(k)} onClick={() => up({ kpis: toggle(s.kpis, k) })}>{k}</Chip>)}
           {!kpiOptions.length && <span className="hint">This project declares no KPIs for this video type.</span>}
         </ChipGroup>
@@ -1732,7 +1766,7 @@ function Form({ cfg, source, warnings, onForget }) {
 
       {tab === "s01" && (
       <section id="s01" className="card">
-        <h2><span className="n">01</span> Video type</h2>
+        <h2><span className="n">01</span> Video Type</h2>
         <ChipGroup id="g-videotype" legend="Type" radio>
           {VIDEO_TYPES.map((t) => (
             <Chip key={t.key} radio on={s.videoTypeKey === t.key} onClick={() => up({ videoTypeKey: t.key, kpis: [], canal: t.key === "social" ? s.canal : [] })}>
@@ -1745,7 +1779,7 @@ function Form({ cfg, source, warnings, onForget }) {
           <option value="">From scratch</option>
           {Object.keys(cfg.templates).map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        {vt.phase && <div className="hint">Selectable and recorded — and render-blocked. There is no pipeline behind it yet (W3).</div>}
+        {vt.phase && <div className="hint">You can pick this and we record it — we just do not produce it yet.</div>}
       </section>
       )}
 
@@ -1766,14 +1800,14 @@ function Form({ cfg, source, warnings, onForget }) {
             </Chip>
           ))}
         </ChipGroup>
-        {pending.length > 0 && <div className="hint">⛔ <b>{pending.join(", ")}</b> — recorded, and render-blocked. Only Video Assembly on Remotion runs today (W3).</div>}
+        {pending.length > 0 && <div className="hint">⛔ <b>{pending.join(", ")}</b> — recorded, but not produced yet. Today we only make Video Assembly edits.</div>}
 
         <ChipGroup
           id="g-canal"
           legend={`Channel — where it ships ${isSocial ? "" : "(social only)"}`}
           hint={isSocial
-            ? "Selecting a channel derives the format defaults below (R3) — all editable. 'Meta' covers Instagram and Facebook, which are two entries downstream."
-            : `${vt.label} has no channel. With no channel there is no safe-zone check — reported as NOT APPLICABLE, never as passed (F4).`}
+            ? "Picking a channel sets the format defaults below — all editable. 'Meta' covers both Instagram and Facebook."
+            : `${vt.label} has no channel, so we cannot check the layout against a platform's safe area. That is reported as not applicable — never as passed.`}
         >
           {CANAL.map((c) => (
             <Chip key={c} on={s.canal.includes(c)} disabled={!isSocial} title={isSocial ? undefined : `${vt.label} ships no channel`} onClick={() => toggleCanal(c)}>{c}</Chip>
@@ -1792,7 +1826,7 @@ function Form({ cfg, source, warnings, onForget }) {
           <React.Fragment>
             <label htmlFor="f-skip">Type to confirm skipping G1</label>
             <input id="f-skip" type="text" value={s.storyboardSkip} aria-invalid={errors.some((e) => e.field === "f-skip") ? "true" : undefined} onChange={(e) => up({ storyboardSkip: e.target.value })} placeholder={SKIP_PHRASE} />
-            <div className="hint">Skipping G1 removes the cheap-stills protection — a failed master is then found at video-credit cost (R8).</div>
+            <div className="hint">Skipping the sketches means a look that does not work turns up on a finished video, instead of on a cheap still.</div>
           </React.Fragment>
         )}
         <div className="grid2">
@@ -1827,8 +1861,8 @@ function Form({ cfg, source, warnings, onForget }) {
               <Chip radio on={s.voMode === "generate"} onClick={() => up({ voMode: "generate" })}>generate</Chip>
               <Chip radio on={s.voMode === "translate"} onClick={() => up({ voMode: "translate" })}>translate (dub)<Pending /></Chip>
             </ChipGroup>
-            {s.voMode === "translate" && <div className="hint">⛔ The dub pipeline is specified and <b>inactive</b> (W5). Dub cost is priced <b>per language</b> and is not covered by the per-video ceiling{est.dubbing && est.dubbing.perLanguageCredits != null ? <React.Fragment> — this project records ≈{est.dubbing.perLanguageCredits} cr/language</React.Fragment> : null}.</div>}
-            <ChipGroup id="g-volangs" legend="Languages" hint="A pending reviewer language can be selected but stays render-blocked until confirmed (R7 · D2).">
+            {s.voMode === "translate" && <div className="hint">⛔ Dubbing is <b>not available yet</b>. It is priced <b>per language</b> and sits outside the per-video ceiling{est.dubbing && est.dubbing.perLanguageCredits != null ? <React.Fragment> — this project records ≈{est.dubbing.perLanguageCredits} cr/language</React.Fragment> : null}.</div>}
+            <ChipGroup id="g-volangs" legend="Languages" hint="You can pick a language with no reviewer assigned yet. We record it, and it waits until someone is.">
               {cfg.languages.map((l) => (
                 <Chip key={l.code} on={s.voLangs.includes(l.code)} onClick={() => up({ voLangs: toggle(s.voLangs, l.code) })}>
                   {l.code} <span className={"badge " + (l.reviewer || "pending")}>{l.reviewer || "pending"}</span>
@@ -1838,7 +1872,7 @@ function Form({ cfg, source, warnings, onForget }) {
 
             {s.voLangs.length > 0 && (
               <React.Fragment>
-                <label htmlFor="f-sheet">Review sheet — delivery is optional, sign-off is not (W6)</label>
+                <label htmlFor="f-sheet">Review sheet — sending it is optional, approval is not</label>
                 <div className="grid2">
                   <select id="f-sheet" value={s.sheetChannel} onChange={(e) => up({ sheetChannel: e.target.value })}>
                     <option value="">no channel — delivery is manual</option>
@@ -1866,7 +1900,7 @@ function Form({ cfg, source, warnings, onForget }) {
 
       {tab === "s04" && (
       <section id="s04" className="card">
-        <h2><span className="n">04</span> Campaign metadata &amp; delivery</h2>
+        <h2><span className="n">04</span> Campaign Metadata &amp; Delivery</h2>
         <div className="grid2">
           <div><label htmlFor="f-campaign">Campaign name</label><input id="f-campaign" type="text" value={s.campaign} aria-invalid={errors.some((e) => e.field === "f-campaign") ? "true" : undefined} onChange={(e) => up({ campaign: e.target.value })} placeholder="e.g. spring-launch-02" /></div>
           <div><label htmlFor="f-ticket">Ticket number (required)</label><input id="f-ticket" type="text" required value={s.ticketNumber} aria-invalid={errors.some((e) => e.field === "f-ticket") ? "true" : undefined} onChange={(e) => up({ ticketNumber: e.target.value })} placeholder="e.g. ABC-1234" /></div>
@@ -1881,7 +1915,7 @@ function Form({ cfg, source, warnings, onForget }) {
         <input id="f-drive" type="text" value={s.driveFolder} onChange={(e) => up({ driveFolder: e.target.value })} placeholder={cfg.deliveryDriveDefault || "leave blank — the agent fills this in"} />
         <div className="hint">
           Every final file lands in <code>{(s.driveFolder || cfg.deliveryDriveDefault || "<drive>") + "/" + (s.ticketNumber.trim() || "<ticket>") + "/"}</code> —
-          the folder <b>is</b> the ticket number (W4), so a delivery traces back to its request without anyone remembering a rule.
+          the folder <b>is</b> the ticket number, so a delivery traces back to its request without anyone remembering a rule.
         </div>
         {deliveryUnassigned(s, cfg) && (
           <div className="hint">
@@ -1897,7 +1931,7 @@ function Form({ cfg, source, warnings, onForget }) {
 
       {tab === "s05" && (
       <section id="s05" className="card">
-        <h2><span className="n">05</span> Variations &amp; cost</h2>
+        <h2><span className="n">05</span> Variations &amp; Cost</h2>
         <div className="grid2">
           <div><label htmlFor="f-count">Variations</label><input id="f-count" type="number" min="0" value={s.count} onChange={(e) => up({ count: e.target.value })} /></div>
           <div><label htmlFor="f-est">Estimate, before any credit is spent</label>
@@ -1906,33 +1940,32 @@ function Form({ cfg, source, warnings, onForget }) {
         </div>
         <div className="hint">
           USD is <b>not</b> estimated: {est.notCaptured.join(" · ")}.
-          {est.budgetUsd != null && <React.Fragment> The project ceiling is ${est.budgetUsd}/video (I1) and cannot be checked against a credit figure — that check happens with a real price, not a guessed one.</React.Fragment>}
+          {est.budgetUsd != null && <React.Fragment> The project ceiling is ${est.budgetUsd}/video and cannot be checked against a credit figure — that check happens with a real price, not a guessed one.</React.Fragment>}
         </div>
       </section>
       )}
 
       {totalBlocks > 0 && (
         <section className="card warn-card">
-          <h2>{totalBlocks} render block{totalBlocks > 1 ? "s" : ""} — recorded, not refused</h2>
+          <h2>What We Cannot Make Yet</h2>
           <p className="hint">
-            These are well-formed and worth capturing. The validator will refuse to RENDER them, which
-            is a different answer from refusing to record them — asking for something the agent cannot
-            build yet is useful information, not a mistake.
+            Send this anyway. We record what you asked for — these parts just will not be produced
+            until we can make them, and asking is how they get built.
           </p>
-          {SECTIONS.flatMap((x) => x.block.map((b, i) => <div key={x.n + i} className="hint warn-line">{x.n} · {b}</div>))}
+          {SECTIONS.flatMap((x) => x.block.map((b, i) => <div key={x.n + i} className="hint warn-line">{b}</div>))}
         </section>
       )}
 
       <section className="card">
         <h2><span className="n">→</span> intake.json</h2>
         <pre tabIndex="0" aria-label="The emitted intake.json">{JSON.stringify(intake, null, 2)}</pre>
-        <div className="hint">Then run <code>scripts/intake-validator.js</code> — the Layer-2 cross-checks (reviewer · sign-off · closings · template · ticket) before any credit. A render block there is not a mistake in this form; it is the form having done its job.</div>
+        <div className="hint">This is the brief your answers produce. You do not need to read it — it travels with the request.</div>
       </section>
 
       {/* The ledger. What this will cost and what it will stop, in view the whole way down. */}
       <div className="ledger">
         <span className={"figure" + (errors.length ? " blocking" : "")}><b>{errors.length}</b> to do</span>
-        <span className="figure"><b>{totalBlocks}</b> render block{totalBlocks === 1 ? "" : "s"}</span>
+        <span className="figure"><b>{totalBlocks}</b> not possible yet</span>
         <span className="figure">≈ <b>{est.totalCredits}</b> cr{est.budgetUsd != null ? ` · ceiling $${est.budgetUsd}/video` : ""}</span>
         <span className="actions">
           <button type="button" className="btn ghost" onClick={() => navigator.clipboard && navigator.clipboard.writeText(JSON.stringify(intake, null, 2))}>Copy JSON</button>
@@ -1951,7 +1984,7 @@ function Form({ cfg, source, warnings, onForget }) {
 
       {SUBMIT_ENDPOINT && sent && sent.state === "failed" && (
         <section className="card problem" role="alert">
-          <h2>That did not send — and nothing is lost</h2>
+          <h2>Not Sent — Nothing Is Lost</h2>
           <p className="err">{sent.why}</p>
           <p className="hint">
             Use <b>Download intake.json</b> instead and send the file to whoever runs the agent. The
