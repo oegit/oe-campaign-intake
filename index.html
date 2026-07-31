@@ -74,54 +74,102 @@
 <script crossorigin integrity="sha384-bdF7m0Y1IFKt9Q6xC8X9qkXn0OBriQWKyWwZKYsN05zF6P/g9OakjjL0G2Sd4pB4" src="https://unpkg.com/@babel/standalone@8.0.4/babel.min.js"></script>
 <style>
   /* ───────────────────────────────────────────────────────────────────────────────────────────
-     THREE LAYERS, AND THE BOUNDARIES MATTER.
+     PRUEBA DE ESTILO — descartable, vive en renders/ (gitignored). No es Layer 1.
+     Si se aprueba, este bloque <style> reemplaza intake.html:75–298 tal cual.
 
-     1 PRIMITIVES — spacing, radius, type scale. Belong to nobody.
-     2 SEMANTIC   — ink, surfaces, and the three states this form actually has: fine, warned,
-                    blocked. Deliberately NOT brand-tinted: "confirmed" means the same thing in
-                    every brand, and a brand-coloured confirmation badge would collide with a
-                    brand-coloured selected chip, which is the one place the brand does speak.
-     3 BRAND      — the SIX sockets applyBrand writes, plus two it DERIVES. Six is the contract
-                    with Layer 2 (intake-config.json · validate.js's brand check); a seventh input
-                    would be a contract change, so anything else the design needs is computed from
-                    the primary in intake-core.js, where a test can measure it.
+     TRES CAPAS, y los límites importan (se conserva la estructura original).
+
+     1 PRIMITIVES — espacio, radio, escala tipográfica. No son de nadie.
+     2 SEMANTIC   — tinta, superficies y los tres estados que este formulario tiene de verdad:
+                    bien, advertido, bloqueado.
+     3 BRAND      — los seis sockets que applyBrand escribe siguen existiendo y siguen
+                    escribiéndose (el contrato con Layer 2 no se toca), pero esta hoja YA NO
+                    LOS CONSUME para color ni tipografía. El formulario es neutro por diseño.
      ─────────────────────────────────────────────────────────────────────────────────────────── */
   :root {
     /* 1 · primitives */
-    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
-    --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-pill: 999px;
-    --fs-xs: 11px; --fs-sm: 12px; --fs-base: 14px; --fs-md: 15px; --fs-lg: 19px; --fs-xl: 26px;
-    --control-h: 38px;
-    --maxw: 1180px;
-    --rail-w: 232px;
-    --shadow-1: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .06);
-    --shadow-2: 0 8px 24px rgba(16, 24, 40, .10);
-    --tap: 0;
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 44px;
+    --r-sm: 8px; --r-md: 12px; --r-lg: 20px; --r-pill: 999px;
+    --fs-xs: 11px; --fs-sm: 13px; --fs-base: 15px; --fs-md: 17px; --fs-lg: 20px; --fs-xl: 30px;
+    --fs-title: 21px;   /* el título de sección: 4pt sobre --fs-md */
+    /* El label es una etiqueta callada, no un título: chico, en caja alta, con tracking. */
+    --fs-label: 11px;
+    --control-h: 52px;
+    --maxw: 1240px;
+    --rail-w: 280px;
 
-    /* 2 · semantic */
-    --fg: #1a1a2e;
-    --muted: #5b6472;
-    --line: #e3e7ee;
-    --line-strong: #cbd3e0;
+    /* 2 · semantic — neutros. Ni un color de marca en toda la capa. */
+    --fg: #16181d;
+    --muted: #626772;
+    --line: #e7e7e4;        /* DECORATIVO: separa tarjetas. 1.4.11 no aplica a un separador. */
+    --line-strong: #d5d5d1;
+    /* INTERACTIVO: el borde de un campo o un chip ES la única señal de que el componente
+       existe, así que 1.4.11 sí aplica y pide 3:1. Calculado como el gris MÁS CLARO que
+       cumple contra las tres superficies: 3.46 sobre tarjeta, 3.03 sobre página, 3.31 sobre
+       campo. Un hairline de #d5d5d1 medía 1.47:1 — se veía bien y no era localizable. */
+    --control-line: #888a8e;
     --surface: #ffffff;
-    --surface-2: #f6f8fb;
-    --bad: #b42318;        --bad-soft: #fef3f2;
-    --warn: #92500a;       --warn-soft: #fffaeb;
-    --good: #05603a;       --good-soft: #ecfdf3;
-    --code-bg: #0f172a;    --code-fg: #e2e8f0;
+    --surface-2: #f0f0ed;   /* la página */
+    --field: #fafaf9;       /* el campo, apenas hundido contra la tarjeta */
+    /* 4.55:1 sobre el campo — el gris más claro que pasa AA. Sigue muy por debajo de la
+       tinta (17:1), así que un campo vacío no se lee como lleno. */
+    --placeholder: #717377;
+    /* El riel es un panel CLARO: deja de ser un bloque oscuro y necesita borde para existir
+       contra la página, que también es clara. La sección abierta ya no se distingue por
+       invertir el fondo, así que carga con dos señales: la píldora gris y la barra de tinta. */
+    --panel: #ffffff;
+    --panel-fg: #16181d;
+    --panel-muted: #626772;
+    --panel-line: #e7e7e4;
+    --panel-pill: #f0f0ed;
+    /* Estado. Cada rol viaja en TRES formas, y la razón es una medición: los tres colores que
+       el sistema declara son brillantes y saturados, así que sobre una superficie clara
+       rinden 1.82:1 (éxito), 1.73:1 (aviso) y 4.17:1 (error). Como TEXTO no pasa ninguno; como
+       MARCA rellena, encima de sí mismos, todos pasan holgados.
+         · --*-mark  el color declarado, exacto. Relleno, punto, marcador. Nunca lleva texto
+                     encima salvo el que onColorFor mediría.
+         · --*-soft  su tinte al 90%, el fondo de un badge.
+         · --*       el mismo color oscurecido hasta leerse: 4.93:1 · 4.78:1 · 5.06:1 sobre su
+                     tinte. Es el ÚNICO que se usa para texto.
+       Es la misma maquinaria que accessibleBrandText aplica a la marca, por la misma razón:
+       un color elegido por cómo se ve no es un color que se pueda leer.
 
-    /* 3 · brand — neutral defaults; every one is OVERWRITTEN from the project's Layer 2 config. */
-    --brand: #2563eb;         /* primary: the band, a selected chip's edge, the primary action */
-    --brand-on: #ffffff;      /* text ON the brand — MEASURED by onColorFor, never assumed */
-    --brand-soft: #eff6ff;    /* tinted surface behind a selected chip */
-    --brand-accent: #2563eb;  /* secondary: rules and markers ONLY, never a surface behind text */
-    --brand-deep: #1d4fbc;    /* DERIVED: the dark end of the band */
-    --brand-text: #1d4fbc;    /* DERIVED: the brand, darkened until it reads on --brand-soft */
-    --font-display: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    --font-body: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    /* The one typographic decision Layer 1 gets to make. Every value that travels verbatim into the
-       emitted document — ticket, campaign, credits, codes, the JSON itself — is set in it, so the
-       page distinguishes what you are WRITING from what you are READING. Survives any brand font. */
+       NO HAY ROJO EN EL UI DE ESTE FORMULARIO, y sigue siendo una decisión aparte: aquí nada
+       se rompió, hay trabajo por hacer. El rol de error queda definido para cuando haga falta;
+       pendiente es gris y hecho es verde. */
+    --good-mark: #01DB8C;  --good: #017b4f;  --good-soft: #e6fbf4;
+    --warn-mark: #FFB800;  --warn: #8f6800;  --warn-soft: #fff8e6;
+    --bad-mark:  #F41D1D;  --bad:  #c61818;  --bad-soft:  #fee8e8;
+    --pending: #626772;    --pending-soft: #f3f3f1;
+    /* La vista previa del JSON era un bloque casi negro: en una paleta de grises claros pesaba
+       como si fuera lo importante de la página, y no lo es — es el resultado, no el trabajo. */
+    --code-bg: #f3f3f1;    --code-fg: #2c2f36;
+
+    /* 3 · brand — UN SOLO PUNTO donde la marca se asoma: el elemento seleccionado.
+       Estos son los DEFAULTS de Layer 1 (lo que se ve sin config cargada). applyBrand los
+       sobrescribe con los de cada proyecto, así que el build de OE los pinta con SU azul.
+       Medido para #3385ff: blanco encima da 3.54:1 y NO pasa AA, así que el chip
+       seleccionado no puede ser una píldora rellena con texto blanco. Lo que sí pasa es
+       tinte + borde + el azul oscurecido como texto: 4.63:1. */
+    --brand: #3385ff;
+    --brand-soft: #eff5ff;
+    --brand-text: #296ccf;   /* DERIVADO: el azul oscurecido hasta leerse sobre su tinte */
+    --brand-deep: #2868c7;   /* DERIVADO: el extremo oscuro */
+
+    /* El SÉPTIMO socket, y su default es neutro: Layer 1 no nombra ninguna tipografía de marca.
+       Existe porque un brandbook distingue el rol «titles» del rol «display» (uno es el hero,
+       el otro son títulos, subtítulos y etiquetas de UI) y esta config solo modelaba dos roles,
+       así que los títulos de sección venían heredando el hero. Layer 2 lo llena; si no lo llena,
+       cae al cuerpo y nada se rompe. */
+    --font-titles: var(--font-body);
+
+    /* La jerarquía la hacen tamaño, peso, caja y tracking, no la familia. El stack base es del
+       sistema — el CSP publicado no admite una fuente remota. */
+    /* Helvetica Neue primero: es la única del stack con una escala de pesos real
+       (UltraLight·Thin·Light·Roman·Medium·Bold·Heavy·Black). Helvetica a secas solo trae
+       Light/Regular/Bold, y Arial cubre Windows, donde Neue no existe. Ninguna es de marca —
+       las tres están en la stoplist de genéricas de check-layer1-public.js. */
+    --font-body: "Helvetica Neue", Helvetica, Arial, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   }
 
@@ -129,170 +177,233 @@
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0; background: var(--surface-2); color: var(--fg);
-    font-family: var(--font-body); font-size: var(--fs-base); line-height: 1.5;
+    font-family: var(--font-body); font-size: var(--fs-base); line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
   }
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: var(--sp-5); }
   .mono, code, pre { font-family: var(--font-mono); }
-  /* `overflow-wrap: anywhere` is load-bearing, not polish. A config's delivery folder is a long
-     unbreakable URL and it is rendered inline in a hint; at 375px that single <code> was pushing
-     the whole column to 508px. A project supplies these strings, so their length is not something
-     Layer 1 gets to assume. */
-  code { font-size: .92em; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px 5px; overflow-wrap: anywhere; }
-  a { color: var(--brand-text); }
+  code { font-size: .9em; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px 5px; overflow-wrap: anywhere; }
+  a { color: var(--fg); }
 
-  /* Focus is a rule, which is a legitimate use of the secondary. Never a surface under text. */
-  :focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; border-radius: var(--r-sm); }
+  /* Foco: tinta sobre cualquier superficie de esta paleta. Medido, no asumido. */
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: var(--r-sm); }
   .skip { position: absolute; left: -9999px; }
-  .skip:focus { left: var(--sp-4); top: var(--sp-4); z-index: 20; background: var(--surface); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+  .skip:focus { left: var(--sp-4); top: var(--sp-4); z-index: 20; background: var(--surface); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); }
 
-  /* ── The band ─────────────────────────────────────────────────────────────────────────────
-     A gradient to its own derived dark end. The label is measured against the WORST stop, not
-     the first, because a gradient that passes on its light end and fails on its dark one is how
-     an accessible-looking header ships unreadable. */
-  .brandbar { background: linear-gradient(100deg, var(--brand) 0%, var(--brand-deep) 100%); color: var(--brand-on); }
-  .brandbar .wrap { display: flex; align-items: center; gap: var(--sp-3); padding-top: var(--sp-3); padding-bottom: var(--sp-3); flex-wrap: wrap; }
-  .brandmark { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-lg); letter-spacing: -.01em; }
-  .brandmark img { height: 26px; width: auto; display: block; }
-  .brandbar-tag { font-size: var(--fs-sm); opacity: .9; border-left: 1px solid currentColor; padding-left: var(--sp-3); }
-  .brandbar-src { font-family: var(--font-mono); font-size: var(--fs-xs); opacity: .9; margin-left: auto; }
+  /* ── La banda ─────────────────────────────────────────────────────────────────────────────
+     Ya no es un degradado de marca: es una barra de papel con una regla fina abajo. */
+  .brandbar { background: var(--surface); border-bottom: 1px solid var(--line); }
+  .brandbar .wrap { display: flex; align-items: center; gap: var(--sp-3); padding-top: var(--sp-4); padding-bottom: var(--sp-4); flex-wrap: wrap; }
+  .brandmark { font-family: var(--font-titles); font-weight: 700; font-size: var(--fs-md); letter-spacing: -.015em; }
+  .brandmark img { height: 24px; width: auto; display: block; }
+  .brandbar-tag { font-size: var(--fs-sm); color: var(--muted); border-left: 1px solid var(--line-strong); padding-left: var(--sp-3); }
+  .brandbar-src { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); margin-left: auto; letter-spacing: .02em; }
   .linkish { background: none; border: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; padding: 0 0 0 var(--sp-2); }
 
-  h1 { font-family: var(--font-display); font-size: var(--fs-xl); line-height: 1.15; letter-spacing: -.02em; margin: 0 0 var(--sp-1); }
-  .sub { color: var(--muted); font-size: var(--fs-sm); margin-bottom: var(--sp-5); max-width: 68ch; }
+  h1 { font-family: var(--font-titles); font-size: var(--fs-xl); font-weight: 700; line-height: 1.12; letter-spacing: -.025em; margin: var(--sp-4) 0 var(--sp-2); }
+  .sub { color: var(--muted); font-size: var(--fs-sm); margin-bottom: var(--sp-4); max-width: 68ch; }
+  .sub:last-of-type { margin-bottom: var(--sp-6); }
 
-  /* ── Shell: rail + form ──────────────────────────────────────────────────────────────────── */
-  /* `minmax(0, …)` on EVERY track, and `min-width: 0` on both children.
-     A grid track's automatic minimum is min-content, so one nowrap rail and one long line of JSON
-     were enough to push the single-column mobile layout out to 831px inside a 375px viewport —
-     measured, in an iframe, because the preview pane will not go below 848px and therefore cannot
-     see this at all. A `1fr` track does not mean "no wider than the container". */
+  /* ── Shell: riel + formulario ─────────────────────────────────────────────────────────────
+     `minmax(0, …)` en CADA track y `min-width: 0` en ambos hijos — el mínimo automático de un
+     track es min-content, y un riel nowrap más una línea larga de JSON bastaban para empujar
+     la columna móvil a 831px dentro de un viewport de 375px. */
   .shell { display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
   .shell > * { min-width: 0; }
-  .rail { position: sticky; top: var(--sp-5); }
+
+  /* ── El riel: panel sólido. Es el único gesto fuerte de la página. ───────────────────────── */
+  .rail { position: sticky; top: var(--sp-5); background: var(--panel); color: var(--panel-fg);
+          border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--sp-5) var(--sp-3); }
+  .rail-title { font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .1em;
+                font-weight: 500; color: var(--panel-muted); padding: 0 var(--sp-3) var(--sp-4); }
   .rail ol { list-style: none; margin: 0; padding: 0; position: relative; }
-  /* The spine. One continuous rule behind the dots, so the six sections read as one run. */
-  .rail ol::before { content: ""; position: absolute; left: 7px; top: 10px; bottom: 10px; width: 2px; background: var(--line); }
+  /* La espina, dentro del panel: una regla continua detrás de los puntos. */
+  .rail ol::before { content: ""; position: absolute; left: 19px; top: 18px; bottom: 18px; width: 1px; background: var(--panel-line); }
   .rail li { position: relative; }
-  .rail a { display: grid; grid-template-columns: 16px 1fr; gap: var(--sp-3); align-items: baseline;
-            padding: var(--sp-2) 0; text-decoration: none; color: var(--muted); font-size: var(--fs-sm); }
-  .rail a:hover { color: var(--fg); }
-  .rail .dot { width: 16px; height: 16px; border-radius: var(--r-pill); border: 2px solid var(--line-strong);
-               background: var(--surface); position: relative; z-index: 1; transition: background .15s, border-color .15s; }
-  .rail .num { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: .04em; color: var(--muted); }
-  .rail .name { display: block; color: var(--fg); }
-  .rail li.done .dot { background: var(--brand); border-color: var(--brand); }
-  .rail li.blocked .dot { background: var(--bad); border-color: var(--bad); }
-  /* Never colour alone (WCAG 1.4.1): the state is also a word. */
-  .rail .state { display: block; font-size: var(--fs-xs); }
-  .rail li.blocked .state { color: var(--bad); font-weight: 600; }
+  .rail a { display: grid; grid-template-columns: 10px 1fr; gap: var(--sp-3); align-items: baseline;
+            padding: var(--sp-3); border-radius: var(--r-md); text-decoration: none;
+            color: var(--panel-fg); font-size: var(--fs-sm); transition: background .12s; }
+  .rail a:hover { background: rgba(255, 255, 255, .07); }
+  .rail .dot { width: 10px; height: 10px; border-radius: var(--r-pill); border: 1px solid var(--panel-muted);
+               background: var(--panel); position: relative; z-index: 1; transition: background .15s, border-color .15s; }
+  .rail .num { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: .06em; color: var(--panel-muted); }
+  /* El riel ES el control de pestañas, así que la sección abierta tiene que DOMINAR. Antes
+     todas se pintaban en blanco a 16.86:1 y la píldora competía contra cinco vecinas igual de
+     fuertes. Ahora las no abiertas se atenúan a --panel-muted (7.33:1, sigue pasando AA) y solo
+     la abierta llega a tinta sobre píldora clara. */
+  .rail .name { display: block; font-weight: 500; letter-spacing: -.005em; color: var(--panel-muted); }
+  .rail a:hover .name { color: var(--panel-fg); }
+  /* El punto hecho lleva el verde declarado EXACTO como relleno, con su propia variante
+     oscurecida de aro: el color puro mide 1.82:1 sobre blanco y solo se vería con el aro. */
+  .rail li.done .dot { background: var(--good-mark); border-color: var(--good); }
+  .rail li.pending .dot { background: transparent; border-color: var(--control-line); }
+  /* Nunca solo color (WCAG 1.4.1): el estado también es una palabra. */
+  .rail .state { display: block; font-size: var(--fs-xs); color: var(--panel-muted); }
+  .rail li.pending .state { color: var(--pending); }
   .rail li.done .state { color: var(--good); }
+  /* La sección abierta: píldora clara + una barra de tinta, para que «abierta» no dependa solo
+     del fondo. El punto conserva su color de estado — abierta y completa son cosas distintas. */
+  .rail li.current a { background: var(--panel-pill); box-shadow: inset 3px 0 0 var(--fg); }
+  .rail li.current .name { color: var(--fg); font-weight: 700; }
+  .rail li.current .num { color: var(--muted); }
 
-  /* ── Cards ──────────────────────────────────────────────────────────────────────────────── */
+  /* ── Tarjetas ───────────────────────────────────────────────────────────────────────────── */
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
-          padding: var(--sp-5); margin-bottom: var(--sp-4); box-shadow: var(--shadow-1); scroll-margin-top: var(--sp-5); }
-  .card > h2 { font-family: var(--font-display); font-size: var(--fs-md); margin: 0 0 var(--sp-4); letter-spacing: -.01em; display: flex; align-items: baseline; gap: var(--sp-3); }
-  .card > h2 .n { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); letter-spacing: .06em; }
+          padding: var(--sp-6); margin-bottom: var(--sp-4); scroll-margin-top: var(--sp-5); }
+  /* El número va ARRIBA, no al lado — igual que en el riel, para que el mismo par (número,
+     nombre) se lea igual en los dos lugares y saltar de uno a otro no exija releer. */
+  .card > h2 { font-family: var(--font-titles); font-size: var(--fs-title); font-weight: 500;
+               margin: 0 0 var(--sp-5); letter-spacing: -.015em; line-height: 1.2; }
+  .card > h2 .n { display: block; font-family: var(--font-mono); font-size: var(--fs-xs);
+                  font-weight: 400; color: var(--muted); letter-spacing: .08em; margin-bottom: var(--sp-1); }
   .card:focus-within { border-color: var(--line-strong); }
-  .card.problem { border-color: var(--bad); }
+  .card.problem { border-color: var(--pending); }
   .card.warn-card { border-color: var(--warn); }
-  .card.drop { border: 2px dashed var(--line-strong); box-shadow: none; }
-  .card.drop.dropping { border-color: var(--brand); background: var(--brand-soft); }
+  .card.drop { border: 1px dashed var(--line-strong); background: var(--field); }
+  .card.drop.dropping { border-color: var(--fg); background: var(--surface-2); }
 
-  /* ── Controls ───────────────────────────────────────────────────────────────────────────── */
-  label { display: block; font-size: var(--fs-sm); font-weight: 600; margin: var(--sp-4) 0 var(--sp-1); }
+  /* ── Controles ──────────────────────────────────────────────────────────────────────────── */
+  /* La jerarquía se invierte respecto de hoy: el label es una etiqueta callada y el valor pesa. */
+  label { display: block; font-size: var(--fs-label); font-weight: 500; text-transform: uppercase;
+          letter-spacing: .08em; color: var(--muted); margin: var(--sp-5) 0 var(--sp-2); }
   .card > h2 + label, fieldset > legend + .row { margin-top: 0; }
   input[type=text], input[type=number], input[type=date], select, textarea {
-    width: 100%; min-height: var(--control-h); padding: var(--sp-2) var(--sp-3);
-    border: 1px solid var(--line-strong); border-radius: var(--r-md);
-    font-size: var(--fs-base); font-family: inherit; background: var(--surface); color: var(--fg);
+    width: 100%; min-height: var(--control-h); padding: var(--sp-3) var(--sp-4);
+    border: 1px solid var(--control-line); border-radius: var(--r-md);
+    font-size: var(--fs-base); font-family: var(--font-body); background: var(--field); color: var(--fg);
+    transition: border-color .12s, background .12s;
   }
-  input[type=text], input[type=number] { font-family: var(--font-mono); font-size: var(--fs-sm); }
-  textarea { min-height: 64px; resize: vertical; font-family: inherit; }
-  [aria-invalid="true"] { border-color: var(--bad); background: var(--bad-soft); }
+  input[type=text]:hover, input[type=number]:hover, select:hover, textarea:hover { border-color: var(--fg); }
+  input[type=text]:focus, input[type=number]:focus, select:focus, textarea:focus { background: var(--surface); }
+  ::placeholder { color: var(--placeholder); opacity: 1; }
+  /* El chevron propio hace que el select pese igual que un input. El data: URI está permitido
+     por `img-src 'self' data:` del CSP publicado — es la misma directiva que gobierna un
+     background-image, así que esto sobrevive a la publicación. */
+  select {
+    appearance: none; -webkit-appearance: none;
+    padding-right: var(--sp-7);
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%2316181d' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right var(--sp-4) center;
+  }
+  /* Los campos que viajan verbatim al documento emitido siguen en mono — es lo que distingue
+     lo que ESCRIBES de lo que LEES. Pero al tamaño del cuerpo, no un punto más chico. */
+  input[type=text], input[type=number] { font-family: var(--font-mono); font-size: var(--fs-sm); letter-spacing: -.01em; }
+  textarea { min-height: 104px; resize: vertical; font-family: var(--font-body); font-size: var(--fs-base); line-height: 1.6; }
+  [aria-invalid="true"] { border-color: var(--pending); background: var(--pending-soft); }
   .row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sp-3); }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--sp-4); }
 
-  fieldset { border: 0; margin: var(--sp-4) 0 0; padding: 0; min-width: 0; }
-  legend { font-size: var(--fs-sm); font-weight: 600; padding: 0; margin-bottom: var(--sp-1); }
+  fieldset { border: 0; margin: var(--sp-5) 0 0; padding: 0; min-width: 0; }
+  legend { font-size: var(--fs-label); font-weight: 500; text-transform: uppercase; letter-spacing: .08em;
+           color: var(--muted); padding: 0; margin-bottom: var(--sp-3); }
 
-  /* A real <button>, so it is reachable, pressable with Space, and announced as a toggle. */
-  .chip { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h);
-          padding: var(--sp-1) var(--sp-3); border: 1px solid var(--line-strong); border-radius: var(--r-pill);
-          font: inherit; font-size: var(--fs-sm); background: var(--surface); color: var(--fg);
-          cursor: pointer; transition: border-color .12s, background .12s; }
+  /* Un <button> de verdad: alcanzable, pulsable con Espacio, anunciado como toggle. */
+  .chip { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 42px;
+          padding: var(--sp-2) var(--sp-4); border: 1px solid var(--control-line); border-radius: var(--r-pill);
+          font: inherit; font-size: var(--fs-sm); font-weight: 500; background: var(--surface); color: var(--fg);
+          cursor: pointer; transition: border-color .12s, background .12s, color .12s; }
   .chip:hover { border-color: var(--fg); }
+  /* El único punto donde la marca habla: la píldora rellena. El color del texto NO está escrito
+     aquí — es --brand-on, que onColorFor() elige midiendo blanco y negro sobre el primario y se
+     queda con el que gana. Para el azul de este repo sale blanco a 4.83:1; para un primario
+     claro sale negro. Un relleno con "color: #fff" escrito a mano es legible para una marca e
+     ilegible para la siguiente. */
   .chip[aria-pressed="true"], .chip[aria-checked="true"] {
-    border-color: var(--brand); background: var(--brand-soft); color: var(--brand-text); font-weight: 600;
+    border-color: var(--brand); background: var(--brand); color: var(--brand-on); font-weight: 500;
   }
-  .chip[aria-disabled="true"] { opacity: .55; cursor: not-allowed; border-style: dashed; }
+  /* Deshabilitado sin opacidad: un gris que se MIDE, no un .55 que hunde la etiqueta bajo AA. */
+  .chip[aria-disabled="true"] { cursor: not-allowed; border-style: dashed; border-color: var(--control-line);
+                                background: var(--field); color: var(--muted); }
 
-  .badge { font-size: var(--fs-xs); padding: 2px 7px; border-radius: var(--r-pill); font-weight: 600; letter-spacing: .01em; }
+  .badge { font-size: var(--fs-xs); padding: 3px 8px; border-radius: var(--r-pill); font-weight: 500; letter-spacing: .02em; }
   .badge.confirmed { background: var(--good-soft); color: var(--good); }
   .badge.pending { background: var(--warn-soft); color: var(--warn); }
+  /* Una config puede traer un estado de reviewer que esta hoja no conoce; que no caiga a texto pelado. */
+  .chip .badge { background: var(--surface-2); color: var(--muted); }
+  .chip .badge.confirmed { background: var(--good-soft); color: var(--good); }
+  .chip .badge.pending { background: var(--warn-soft); color: var(--warn); }
+  /* Dentro de una píldora rellena el badge se invierte: toma el color medido como fondo y el
+     primario como texto. Es el MISMO par que ya se midió para el chip, al revés — así que si
+     pasa en un sentido pasa en el otro, y un badge ámbar sobre relleno de marca no lo haría. */
+  .chip[aria-pressed="true"] .badge, .chip[aria-checked="true"] .badge {
+    background: var(--brand-on); color: var(--brand);
+  }
 
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
-         min-height: var(--control-h); padding: var(--sp-2) var(--sp-4);
-         background: var(--brand); color: var(--brand-on); border: 1px solid transparent;
-         border-radius: var(--r-md); font: inherit; font-size: var(--fs-base); font-weight: 600; cursor: pointer;
-         transition: background .12s; }
-  .btn:hover { background: var(--brand-deep); }
-  .btn.ghost { background: var(--surface); color: var(--fg); border-color: var(--line-strong); }
-  .btn.ghost:hover { background: var(--surface-2); }
-  .btn:disabled { background: var(--line); color: var(--muted); cursor: not-allowed; }
+         min-height: 46px; padding: var(--sp-2) var(--sp-5);
+         background: var(--fg); color: var(--surface); border: 1px solid var(--fg);
+         border-radius: var(--r-pill); font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer;
+         letter-spacing: -.005em; transition: background .12s, border-color .12s; }
+  .btn:hover { background: #000000; border-color: #000000; }
+  .btn.ghost { background: var(--surface); color: var(--fg); border-color: var(--control-line); }
+  .btn.ghost:hover { background: var(--surface-2); border-color: var(--fg); }
+  .btn:disabled { background: var(--surface-2); color: var(--muted); border-color: var(--line); cursor: not-allowed; }
   .file-btn input[type=file] { display: none; }
-  .check { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); font-weight: 400; margin: 0; }
-  .check input { width: auto; min-height: 0; }
+  .check { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); font-weight: 400;
+           text-transform: none; letter-spacing: 0; color: var(--fg); margin: 0; }
+  .check input { width: auto; min-height: 0; accent-color: var(--fg); }
 
-  .hint { font-size: var(--fs-sm); color: var(--muted); margin-top: var(--sp-1); }
-  .err { color: var(--bad); font-size: var(--fs-sm); margin-top: var(--sp-1); }
+  /* Una sola regla `.hint`, y una sola forma de espaciar — el <p> traía 12px del user-agent
+     que el <div> no tenía, con la misma clase. */
+  .hint, p.hint { font-size: var(--fs-sm); color: var(--muted); margin: var(--sp-2) 0 0; }
+  .err { color: var(--pending); font-size: var(--fs-sm); margin-top: var(--sp-2); }
   .warn-line { color: var(--warn); }
-  .est { font-size: var(--fs-base); }
-  .est b { font-family: var(--font-mono); font-size: var(--fs-lg); }
+  .est { font-size: var(--fs-base); display: flex; align-items: baseline; gap: var(--sp-2);
+         min-height: var(--control-h); padding: var(--sp-3) var(--sp-4);
+         background: var(--field); border: 1px solid var(--line); border-radius: var(--r-md); }
+  .est b { font-family: var(--font-mono); font-size: var(--fs-lg); font-weight: 700; }
+  /* El glifo de estado es decorativo y va a tamaño fijo, no al de la fuente que toque. */
+  .glyph { font-size: var(--fs-sm); line-height: 1; }
 
-  pre { background: var(--code-bg); color: var(--code-fg); padding: var(--sp-4); border-radius: var(--r-md);
-        overflow: auto; font-size: var(--fs-sm); max-height: 340px; margin: 0; }
-  .excerpt { background: var(--surface-2); color: var(--fg); border: 1px solid var(--line);
+  pre { background: var(--code-bg); color: var(--code-fg); border: 1px solid var(--line); padding: var(--sp-5); border-radius: var(--r-md);
+        overflow: auto; font-size: var(--fs-sm); line-height: 1.65; max-height: 340px; margin: 0; }
+  .excerpt { background: var(--field); color: var(--fg); border: 1px solid var(--line);
              white-space: pre-wrap; word-break: break-word; max-height: 140px; }
 
-  /* ── The error summary, and the ledger ──────────────────────────────────────────────────────
-     A live region that MOUNTS at the same moment its content changes is frequently not announced,
-     so this element is always in the DOM and merely empty when the form is clean. Polite, not
-     assertive: it re-renders on every keystroke and assertive would be a stream of interruptions. */
+  /* ── El resumen de errores, y el ledger ─────────────────────────────────────────────────────
+     Una live region que se MONTA en el mismo instante en que cambia su contenido con frecuencia
+     no se anuncia, así que este elemento está siempre en el DOM y simplemente vacío. */
   .summary { margin-bottom: var(--sp-4); }
-  .summary ol { margin: var(--sp-2) 0 0; padding-left: var(--sp-5); }
-  .summary li { margin: var(--sp-1) 0; }
-  .summary a { color: var(--bad); }
+  .summary .card.problem > h2 { color: var(--pending); margin-bottom: var(--sp-4); }
+  .summary ol { margin: 0; padding-left: var(--sp-5); }
+  .summary li { margin: var(--sp-2) 0; }
+  .summary a { color: var(--pending); text-underline-offset: 3px; }
 
   .ledger { position: sticky; bottom: 0; z-index: 5; margin-top: var(--sp-5);
-            background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
-            box-shadow: var(--shadow-2); padding: var(--sp-3) var(--sp-4);
-            display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
-  .ledger .figure { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--muted); }
+            background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg);
+            box-shadow: 0 -2px 20px rgba(22, 24, 29, .07);
+            padding: var(--sp-3) var(--sp-5);
+            padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
+            display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap; }
+  .ledger .figure { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--muted); letter-spacing: -.01em; }
   .ledger .figure b { color: var(--fg); font-size: var(--fs-base); }
-  .ledger .figure.blocking b { color: var(--bad); }
+  .ledger .figure.blocking b { color: var(--pending); }
   .ledger .actions { margin-left: auto; display: flex; gap: var(--sp-2); }
 
   /* ── Responsive ─────────────────────────────────────────────────────────────────────────── */
-  @media (max-width: 900px) {
+  @media (max-width: 980px) {
     .shell { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
-    .rail { position: static; overflow-x: auto; }
-    .rail ol { display: flex; gap: var(--sp-4); }
-    .rail ol::before { left: 0; right: 0; top: 7px; bottom: auto; height: 2px; width: auto; }
+    .rail { position: static; overflow-x: auto; padding: var(--sp-4); }
+    .rail-title { display: none; }
+    .rail ol { display: flex; gap: var(--sp-2); }
+    .rail ol::before { left: 0; right: 0; top: 21px; bottom: auto; height: 1px; width: auto; }
     .rail a { grid-template-columns: 1fr; gap: var(--sp-1); white-space: nowrap; }
+    .rail .dot { margin-bottom: var(--sp-1); }
     .rail .state { white-space: nowrap; }
   }
   @media (max-width: 640px) {
     .wrap { padding: var(--sp-4); }
-    :root { --fs-xl: 22px; --sp-5: 16px; }
+    :root { --fs-xl: 24px; --sp-6: 20px; --control-h: 48px; }
     .ledger .actions { margin-left: 0; width: 100%; }
+    .ledger .actions .btn { flex: 1; }
   }
-  /* Touch targets clear 44px without inflating the pointer layout. */
-  @media (pointer: coarse) { :root { --control-h: 44px; } }
+  @media (pointer: coarse) { :root { --control-h: 52px; } }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
   @media print {
     .rail, .ledger, .btn, .skip { display: none; }
     .shell { grid-template-columns: 1fr; }
-    .card { break-inside: avoid; box-shadow: none; }
+    .card { break-inside: avoid; }
     pre { max-height: none; }
   }
 </style>
@@ -838,8 +949,9 @@ const PROJECT_CONFIG = {
       "secondary": "#FF6600"
     },
     "fonts": {
-      "display": "Poppins, Arial, Helvetica, sans-serif",
-      "body": "Wix Madefor Text, Arial, Helvetica, sans-serif"
+      "display": "Poppins, \"Helvetica Neue\", Helvetica, Arial, sans-serif",
+      "titles": "\"Wix Madefor Display\", \"Helvetica Neue\", Helvetica, Arial, sans-serif",
+      "body": "\"Wix Madefor Text\", \"Helvetica Neue\", Helvetica, Arial, sans-serif"
     }
   },
   "channels": {
@@ -986,7 +1098,13 @@ const SUBMIT_TOKEN = "6f599d561b0355f66efb5040a60cfeb68ae5fc9700813081";
  * (intake-config.json's shape, and validate.js's brand check against tokens.json). The two derived
  * values below are computed from the primary — they are outputs, not things a project supplies.
  */
-const BRAND_SOCKETS = ["--brand", "--brand-on", "--brand-soft", "--brand-accent", "--font-display", "--font-body"];
+// SEVEN sockets since the restyle, and the seventh is a deliberate contract change, not a slip.
+// A brandbook distinguishes the HERO face from the TITLES face — the first is reserved for a huge
+// H1, the second is what titles, subtitles and UI labels are set in. This config modelled only two
+// roles, so every section title on this form inherited the hero face, which is the one face its own
+// brandbook says not to use at this size. `--font-titles` gives Layer 2 somewhere to say so, and
+// Layer 1 still names no typeface: with no `fonts.titles` the socket keeps its neutral default.
+const BRAND_SOCKETS = ["--brand", "--brand-on", "--brand-soft", "--brand-accent", "--font-display", "--font-titles", "--font-body"];
 const DERIVED_SOCKETS = ["--brand-deep", "--brand-text"];
 
 /**
@@ -1026,6 +1144,7 @@ function applyBrand(brand) {
   }
   const f = brand.fonts || {};
   set("--font-display", f.display);
+  set("--font-titles", f.titles);
   set("--font-body", f.body);
   // A webfont is fetched only when the project asks for one by URL; nothing loads otherwise.
   // NOTE: the published page's CSP has no remote origin in `style-src`, so this link is INERT
@@ -1359,6 +1478,11 @@ function Form({ cfg, source, warnings, onForget }) {
   });
   const up = (patch) => set((prev) => ({ ...prev, ...patch }));
 
+  // One section renders at a time and the rail is its tab control. `visited` is what lets the rail
+  // distinguish "this section has no errors" from "a person has been through it" — see SECTIONS.
+  const [tab, setTab] = useState("s00");
+  const [visited, setVisited] = useState(["s00"]);
+
   const vt = VIDEO_TYPES.find((t) => t.key === s.videoTypeKey);
   const isSocial = vt.key === "social";
   const kpiOptions = (cfg.kpis || {})[vt.key] || [];
@@ -1461,17 +1585,46 @@ function Form({ cfg, source, warnings, onForget }) {
     { id: "s03", n: "03", name: "Content" },
     { id: "s04", n: "04", name: "Metadata & delivery" },
     { id: "s05", n: "05", name: "Variations & cost" },
-  ].map((x) => ({ ...x, fix: errors.filter((e) => e.section === x.n), block: blocksFor[x.n] || [] }));
+  ].map((x) => ({
+    ...x,
+    fix: errors.filter((e) => e.section === x.n),
+    block: blocksFor[x.n] || [],
+    // A section reads DONE only once it has been opened AND has nothing left to fix. Reporting
+    // "ok" on a section nobody has looked at is the same error the QA gate makes when it calls a
+    // check it never ran a pass: 01 and 05 carry defaults, so on an untouched form they answered
+    // "no errors" — which is true, and is not "this person decided this".
+    done: visited.includes(x.id) && errors.filter((e) => e.section === x.n).length === 0,
+  }));
   const totalBlocks = SECTIONS.reduce((n, x) => n + x.block.length, 0);
 
-  /** Anchors scroll; they do not focus a form control. An error summary that only scrolls is half a fix. */
+  /** Open a section. Marks it visited, so the rail can tell "no errors" from "reviewed". */
+  const open = (id) => {
+    setTab(id);
+    setVisited((v) => (v.includes(id) ? v : v.concat(id)));
+  };
+
+  /**
+   * Anchors used to only scroll. Now that one section renders at a time, the target may not be
+   * mounted at all, so this SWITCHES TAB FIRST and focuses on the next frame — a summary link
+   * that scrolls to a section React has not rendered is a link that does nothing.
+   */
   const jumpTo = (id) => (e) => {
     e.preventDefault();
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
-    const focusable = el.matches("input, textarea, select") ? el : el.querySelector("input, textarea, select, button");
-    if (focusable) focusable.focus({ preventScroll: true });
+    const isSection = /^s\d\d$/.test(id);
+    const sectionId = isSection ? id : (SECTIONS.find((x) => errors.some((er) => er.field === id && er.section === x.n)) || {}).id;
+    if (sectionId) open(sectionId);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(id) || (sectionId && document.getElementById(sectionId));
+      if (!el) return;
+      // Picking a tab is not the same move as chasing a named field, and since one section
+      // renders at a time the page is now short enough that a tab needs no scroll at all —
+      // scrolling it only produced a jump to a page that was already in view. So a tab returns
+      // to the top and a field, which may sit below the fold inside a long section, centres.
+      if (isSection) window.scrollTo({ top: 0, behavior: "smooth" });
+      else el.scrollIntoView({ block: "center", behavior: "smooth" });
+      const focusable = el.matches("input, textarea, select") ? el : el.querySelector("input, textarea, select, button");
+      if (focusable) focusable.focus({ preventScroll: true });
+    });
   };
 
   return (
@@ -1507,11 +1660,19 @@ function Form({ cfg, source, warnings, onForget }) {
           {warnings.map((w, i) => <div key={i} className="hint warn-line">{w}</div>)}
         </div>
       )}
+      {/* This used to say the webfont was blocked "on the published page", which read as: it loads
+          here. It does not. `style-src 'self' 'unsafe-inline'` is identical in both builds —
+          publish-intake.js rewrites `connect-src` and nothing else — so the request is refused in
+          EVERY build, measured: `securitypolicyviolation → style-src-elem → fonts.googleapis.com`.
+          The reason it looked like it worked is that the font was installed on the machine doing the
+          looking, which is the one condition that makes a font bug invisible to the person shipping
+          it. Self-hosting is the only fix, and it is a decision, not a default. */}
       {cfg.brand && cfg.brand.fontsHref && (
         <div className="hint">
-          This config asks for a webfont from <code>{(() => { try { return new URL(cfg.brand.fontsHref).host; } catch (e) { return cfg.brand.fontsHref; } })()}</code>.
-          It is the only third party a config can reach, and the published page blocks it — there the
-          form uses the font stack the config names.
+          This config asks for a webfont from <code>{(() => { try { return new URL(cfg.brand.fontsHref).host; } catch (e) { return cfg.brand.fontsHref; } })()}</code>,
+          and <b>no build loads it</b> — this page reaches no third party for styling, by policy. The
+          form uses the font stack the config names, so it looks right only on a machine where that
+          font is installed.
         </div>
       )}
 
@@ -1519,15 +1680,19 @@ function Form({ cfg, source, warnings, onForget }) {
         <nav className="rail" aria-label="Sections">
           <ol>
             {SECTIONS.map((x) => (
-              <li key={x.id} className={x.fix.length ? "blocked" : "done"}>
-                <a href={"#" + x.id} onClick={jumpTo(x.id)}>
+              <li key={x.id} className={[x.done ? "done" : "pending", tab === x.id ? "current" : ""].filter(Boolean).join(" ")}>
+                <a href={"#" + x.id} aria-current={tab === x.id ? "true" : undefined} onClick={jumpTo(x.id)}>
                   <span className="dot" aria-hidden="true"></span>
                   <span>
                     <span className="num">{x.n}</span>
                     <span className="name">{x.name}</span>
                     {/* The state is a WORD as well as a colour — colour alone is not a status (1.4.1). */}
                     <span className="state">
-                      {x.fix.length ? `${x.fix.length} to fix` : x.block.length ? `${x.block.length} will block render` : "ok"}
+                      {x.fix.length
+                        ? `${x.fix.length} to do`
+                        : x.block.length
+                          ? `${x.block.length} will block render`
+                          : x.done ? "done" : "not started"}
                     </span>
                   </span>
                 </a>
@@ -1540,10 +1705,10 @@ function Form({ cfg, source, warnings, onForget }) {
       {/* Always mounted, empty when clean. A live region that appears at the same instant its text
           changes is frequently not announced at all. Polite, because it re-renders on every
           keystroke and assertive would be a stream of interruptions. */}
-      <div className="summary" role="region" aria-live="polite" aria-label="Problems to fix">
+      <div className="summary" role="region" aria-live="polite" aria-label="Required tasks">
         {errors.length > 0 && (
           <div className="card problem">
-            <h2>{errors.length} thing{errors.length > 1 ? "s" : ""} to fix before this can be exported</h2>
+            <h2>Required Tasks</h2>
             <ol>
               {errors.map((e, i) => (
                 <li key={i}><a href={"#" + e.field} onClick={jumpTo(e.field)}>{e.section} · {e.message}</a></li>
@@ -1553,6 +1718,7 @@ function Form({ cfg, source, warnings, onForget }) {
         )}
       </div>
 
+      {tab === "s00" && (
       <section id="s00" className="card">
         <h2><span className="n">00</span> Objectives</h2>
         <label htmlFor="f-goal">What is this campaign for, in your own words?</label>
@@ -1562,7 +1728,9 @@ function Form({ cfg, source, warnings, onForget }) {
           {!kpiOptions.length && <span className="hint">This project declares no KPIs for this video type.</span>}
         </ChipGroup>
       </section>
+      )}
 
+      {tab === "s01" && (
       <section id="s01" className="card">
         <h2><span className="n">01</span> Video type</h2>
         <ChipGroup id="g-videotype" legend="Type" radio>
@@ -1579,7 +1747,9 @@ function Form({ cfg, source, warnings, onForget }) {
         </select>
         {vt.phase && <div className="hint">Selectable and recorded — and render-blocked. There is no pipeline behind it yet (W3).</div>}
       </section>
+      )}
 
+      {tab === "s02" && (
       <section id="s02" className="card">
         <h2><span className="n">02</span> Channel</h2>
         <ChipGroup id="g-execution" legend="Execution — how the video is produced">
@@ -1636,7 +1806,9 @@ function Form({ cfg, source, warnings, onForget }) {
         <label htmlFor="f-format">Output format</label>
         <select id="f-format" value={s.outputFormat} onChange={(e) => up({ outputFormat: e.target.value })}>{OUTPUT_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}</select>
       </section>
+      )}
 
+      {tab === "s03" && (
       <section id="s03" className="card">
         <h2><span className="n">03</span> Content</h2>
         <ChipGroup id="g-creation" legend="Assets Creation">
@@ -1690,7 +1862,9 @@ function Form({ cfg, source, warnings, onForget }) {
           {UPLOAD_KINDS.map((k) => <Chip key={k} on={s.uploadKinds.includes(k)} onClick={() => up({ uploadKinds: toggle(s.uploadKinds, k) })}>{k}</Chip>)}
         </ChipGroup>
       </section>
+      )}
 
+      {tab === "s04" && (
       <section id="s04" className="card">
         <h2><span className="n">04</span> Campaign metadata &amp; delivery</h2>
         <div className="grid2">
@@ -1719,7 +1893,9 @@ function Form({ cfg, source, warnings, onForget }) {
           </div>
         )}
       </section>
+      )}
 
+      {tab === "s05" && (
       <section id="s05" className="card">
         <h2><span className="n">05</span> Variations &amp; cost</h2>
         <div className="grid2">
@@ -1733,6 +1909,7 @@ function Form({ cfg, source, warnings, onForget }) {
           {est.budgetUsd != null && <React.Fragment> The project ceiling is ${est.budgetUsd}/video (I1) and cannot be checked against a credit figure — that check happens with a real price, not a guessed one.</React.Fragment>}
         </div>
       </section>
+      )}
 
       {totalBlocks > 0 && (
         <section className="card warn-card">
@@ -1754,7 +1931,7 @@ function Form({ cfg, source, warnings, onForget }) {
 
       {/* The ledger. What this will cost and what it will stop, in view the whole way down. */}
       <div className="ledger">
-        <span className={"figure" + (errors.length ? " blocking" : "")}><b>{errors.length}</b> to fix</span>
+        <span className={"figure" + (errors.length ? " blocking" : "")}><b>{errors.length}</b> to do</span>
         <span className="figure"><b>{totalBlocks}</b> render block{totalBlocks === 1 ? "" : "s"}</span>
         <span className="figure">≈ <b>{est.totalCredits}</b> cr{est.budgetUsd != null ? ` · ceiling $${est.budgetUsd}/video` : ""}</span>
         <span className="actions">
