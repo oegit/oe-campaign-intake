@@ -1169,7 +1169,45 @@ const PROJECT_CONFIG = {
     "source": "OE licensed company library (music.md)",
     "license": "confirmed"
   },
-  "templates": {},
+  "templates": {
+    "oe-social-10s": {
+      "function": "commercial",
+      "formats": [
+        "9:16"
+      ],
+      "duration": {
+        "mode": "fixed",
+        "seconds": 10
+      },
+      "scenes": [
+        {
+          "id": "hook",
+          "level": "parametrized",
+          "variables": [
+            "hook_line"
+          ]
+        },
+        {
+          "id": "benefit",
+          "level": "slot",
+          "slotTypes": [
+            "b_roll",
+            "text_card"
+          ],
+          "proposedSlotType": "b_roll"
+        },
+        {
+          "id": "cta",
+          "level": "slot",
+          "slotTypes": [
+            "b_roll",
+            "text_card"
+          ],
+          "proposedSlotType": "b_roll"
+        }
+      ]
+    }
+  },
   "kpis": {
     "tv": [
       "Reach",
