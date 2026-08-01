@@ -96,6 +96,7 @@
        mismo nivel y el H1 dejaba de mandar. Ambos van en 700 — el peso ya no distingue, lo hace
        el tamaño (Helvetica Neue, que es la que de verdad renderiza, no tiene 600). */
     --fs-title: 29px;
+    --fs-brandmark: 19px;   /* el nombre del cliente en la banda */
     /* El label es una etiqueta callada, no un título: chico, en caja alta, con tracking. */
     --fs-label: 11px;
     --control-h: 52px;
@@ -217,7 +218,12 @@
      regla divisoria, que es lo único que sí puede ser tenue: no lleva texto. */
   .brandbar { background: var(--brand); color: var(--brand-on); }
   .brandbar .wrap { display: flex; align-items: center; gap: var(--sp-3); padding-top: var(--sp-4); padding-bottom: var(--sp-4); flex-wrap: wrap; }
-  .brandmark { font-family: var(--font-titles); font-weight: 700; font-size: var(--fs-md); letter-spacing: -.015em; }
+  /* El nombre del cliente manda en la banda: 17 → 29px. No es el ajuste de un proyecto en
+     particular — `--fs-brandmark` y el fondo `var(--brand)` aplican a cualquiera que se cargue.
+     (Segunda vez en este archivo que check-layer1-public.js caza un comentario: la primera fue un
+     hex de marca, esta un nombre de cliente. La regla no distingue código de prosa, y hace bien —
+     un ejemplo concreto en Layer 1 es un proyecto en Layer 1 aunque esté detrás de un `/*`.) */
+  .brandmark { font-family: var(--font-titles); font-weight: 700; font-size: var(--fs-brandmark); letter-spacing: -.02em; }
   .brandmark img { height: 24px; width: auto; display: block; }
   .brandbar-tag { font-size: var(--fs-sm); padding-left: var(--sp-3);
                   border-left: 1px solid var(--brand-on);
@@ -241,8 +247,13 @@
   .shell > * { min-width: 0; }
 
   /* ── El riel: panel sólido. Es el único gesto fuerte de la página. ───────────────────────── */
+  /* Padding UNIFORME. Era `--sp-5 --sp-3` = 24px arriba y abajo contra 12 a los lados, y eso sólo
+     se ve cuando la píldora del elemento abierto es la primera o la última: entonces queda con el
+     doble de aire por fuera que por los costados y parece descentrada dentro de su propio panel.
+     Un panel cuyo contenido puede tocar cualquiera de sus cuatro bordes necesita los cuatro
+     iguales. Medido antes: hueco lateral 13px (12 + el borde), hueco superior 24. */
   .rail { position: sticky; top: var(--sp-5); background: var(--panel); color: var(--panel-fg);
-          border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--sp-5) var(--sp-3); }
+          border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--sp-3); }
   .rail-title { font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .1em;
                 font-weight: 500; color: var(--panel-muted); padding: 0 var(--sp-3) var(--sp-4); }
   .rail ol { list-style: none; margin: 0; padding: 0; position: relative; }
@@ -332,7 +343,14 @@
           padding: var(--sp-2) var(--sp-4); border: 1px solid var(--control-line); border-radius: var(--r-pill);
           font: inherit; font-size: var(--fs-sm); font-weight: 500; background: var(--surface); color: var(--fg);
           cursor: pointer; transition: border-color .12s, background .12s, color .12s; }
-  .chip:hover { border-color: var(--fg); }
+  /* Hover: el tinte de la marca, no un gris. `--brand-soft` es el mismo tinte al 90% sobre el que
+     ya se midió que `--brand-text` se lee (4.63:1), así que la etiqueta del chip — que va en
+     `--fg`, mucho más oscura — pasa holgada sobre él en cualquier marca. El borde toma el primario
+     entero para que el estado se vea también sin color de fondo (contraste alto, no sólo tono).
+     No aplica al chip YA seleccionado: ese es una píldora rellena y volverla clara al pasar por
+     encima leería como deseleccionar. */
+  .chip:hover:not([aria-pressed="true"]):not([aria-checked="true"]):not([aria-disabled="true"]) {
+    background: var(--brand-soft); border-color: var(--brand); }
   /* El único punto donde la marca habla: la píldora rellena. El color del texto NO está escrito
      aquí — es --brand-on, que onColorFor() elige midiendo blanco y negro sobre el primario y se
      queda con el que gana. Para el azul de este repo sale blanco a 4.83:1; para un primario
@@ -526,8 +544,32 @@ const MODES = ["Generate", "Add", "N/A"];
 const RATIOS = ["9:16", "1:1", "4:5", "16:9"];
 const OUTPUT_FORMATS = ["MP4 H.264", "MOV ProRes"];
 const CREATION_TYPES = ["B-Rolls", "VoiceOver", "Music", "SFX", "Images"];
-const UPLOAD_KINDS = ["footage", "stills", "closing_promo", "music", "logo"];
-const SHEET_CHANNELS = ["slack", "drive", "email", "manual"];
+/**
+ * VALUE vs LABEL, and they are not the same word — the pattern EDITING already uses above.
+ *
+ * The values go into the document: `assetsUpload`'s keys and `reviewSheet.channel`, which is a
+ * schema enum. So they are frozen. What was NOT frozen, and had simply never been separated, is
+ * what a person READS: the form was printing the keys, so a marketing brief offered a chip labelled
+ * `closing_promo`. An underscore is how a program spells a space; showing it to somebody filling in
+ * a form is leaking the implementation into the vocabulary.
+ *
+ * Deliberately a written label per entry rather than a title-caser over the values: a formatter
+ * would have to be taught that SFX is not "Sfx" and UGC is not "Ugc", and every new exception is a
+ * bug in a place nobody looks. Five words are cheaper than a rule with exceptions.
+ */
+const UPLOAD_KINDS = [
+  { value: "footage", label: "Footage" },
+  { value: "stills", label: "Stills" },
+  { value: "closing_promo", label: "Closing Promo" },
+  { value: "music", label: "Music" },
+  { value: "logo", label: "Logo" },
+];
+const SHEET_CHANNELS = [
+  { value: "slack", label: "Slack" },
+  { value: "drive", label: "Drive Doc" },
+  { value: "email", label: "Email" },
+  { value: "manual", label: "Manual" },
+];
 const SKIP_PHRASE = "SKIP G1";
 
 /**
@@ -798,8 +840,14 @@ function estimate(cfg, { template, count, voMode }) {
  *     the validator turns it into a render block: delivery is not approval (W6).
  */
 function buildIntakeV2(s, cfg, now) {
-  const vt = VIDEO_TYPES.find((t) => t.key === s.videoTypeKey) || VIDEO_TYPES[1];
-  const isSocial = vt.key === "social";
+  // SIN RESERVA. Esto caía a VIDEO_TYPES[1] —— «Social Media» —— cuando no había nada elegido,
+  // que es la falla F4 en su forma más cara: el documento afirmaba un tipo que nadie escogió, y
+  // lo afirmaba bien formado, así que ningún schema iba a discutirlo. Ahora sin elección se emite
+  // "" y el enum de `videoType.type` lo rechaza en voz alta. Que no llegue ahí es trabajo de
+  // formErrors, que ya no deja exportar sin tipo: son dos defensas de distinta naturaleza y las
+  // dos hacen falta —— una impide el error, la otra lo hace visible si igual pasa.
+  const vt = VIDEO_TYPES.find((t) => t.key === s.videoTypeKey) || null;
+  const isSocial = !!vt && vt.key === "social";
   const execution = s.execution && s.execution.length ? s.execution : ["Video Assembly"];
   const editing = s.editing && s.editing.length ? s.editing : ["remotion"];
   const pending = deriveExecutionPending(execution, editing);
@@ -835,10 +883,10 @@ function buildIntakeV2(s, cfg, now) {
     project: cfg.project,
     objectives: { goal: s.goal || "", kpis: (s.kpis || []).slice() },
     videoType: {
-      type: vt.key,
-      label: vt.label,
+      type: vt ? vt.key : "",
+      label: vt ? vt.label : "",
       template: s.template || null,
-      ...(vt.phase ? { phase: vt.phase } : {}),
+      ...(vt && vt.phase ? { phase: vt.phase } : {}),
     },
     channel: {
       ...(isSocial && (s.canal || []).length ? { canal: s.canal.slice() } : {}),
@@ -895,6 +943,7 @@ function formErrors(s, cfg) {
   const at = (section, field, message) => e.push({ section, field, message });
   const vt = VIDEO_TYPES.find((t) => t.key === s.videoTypeKey);
   if (!s.goal || !s.goal.trim()) at("00", "f-goal", "the objective in your own words is required");
+  if (!vt) at("01", "g-videotype", "pick a video type");
   if (!s.campaign || !s.campaign.trim()) at("04", "f-campaign", "campaign name is required");
   if (!s.ticketNumber || !s.ticketNumber.trim()) at("04", "f-ticket", "ticket number is required — your files are delivered in a folder named after it");
   if (!(s.execution || []).length) at("02", "g-execution", "pick at least one execution");
@@ -1134,6 +1183,25 @@ const PROJECT_CONFIG = {
 // only writes, validates the shape, caps the size, and returns no data at all.
 const SUBMIT_ENDPOINT = "https://script.google.com/macros/s/AKfycbyViVdZjl14GYlfvE2k0utXNsmy-p9VGye3iSMmZ-HCZBaI4mXcVy2iGbtGOCMwf1GM7g/exec";
 const SUBMIT_TOKEN = "6f599d561b0355f66efb5040a60cfeb68ae5fc9700813081";
+
+/**
+ * The version of THIS FORM, shown in the bar, and bumped BY HAND when the form changes.
+ *
+ * It is deliberately not a build stamp, and that is the whole reason it is a literal. The published
+ * page's one guarantee is that it is REPRODUCIBLE — the source plus a named allowlist plus four
+ * substitutions, reversible byte for byte — and a commit hash, a date or a counter injected at build
+ * time is a fifth substitution whose value changes on every build. That would make two builds of the
+ * same source disagree, which is exactly the property `publish-intake.js --check` exists to detect.
+ * The commit and the sha256 already live in the README beside the page, where they cost nothing.
+ *
+ * So: a person changes this line in the same commit that changes the form. It will occasionally be
+ * forgotten, and that is an honest trade — a version that is sometimes stale is worth more than a
+ * stamp that breaks the only claim this page makes about itself.
+ *
+ * It is NOT the schema version (`2.0`, the document's shape) and NOT the agent's spec version.
+ * Those move for their own reasons and pinning them together would make each one lie about the other.
+ */
+const FORM_VERSION = "1.0";
 
 /**
  * The complete brand contract with Layer 2: SIX inputs, and a seventh would be a contract change
@@ -1440,7 +1508,7 @@ function BrandBar({ cfg, source, onForget }) {
         <span className="brandmark">
           {b.logo ? <img src={b.logo} alt={b.label || cfg.projectLabel || cfg.project} /> : (b.label || cfg.projectLabel || cfg.project)}
         </span>
-        <span className="brandbar-tag">Agent: Video Production</span>
+        <span className="brandbar-tag">Agent: Video Production · v{FORM_VERSION}</span>
         {/* Which config is driving this form — and ONLY when that is a live question.
             In an injected build there is exactly one project, it is named to the left of this, and
             there is nothing to forget: "config: built in · 4 language(s) · 0 template(s)" was
@@ -1515,7 +1583,10 @@ function Root() {
 /** The form itself. NO EARLY RETURNS HERE — Root has already proved this config is usable. */
 function Form({ cfg, source, warnings, onForget }) {
   const [s, set] = useState({
-    goal: "", kpis: [], videoTypeKey: "social", template: null,
+    // Sin tipo de video elegido. Traía "social" precargado, y un radio ya marcado al abrir la
+    // sección no es una sugerencia: es una respuesta que el formulario da por la persona y que
+    // viaja al documento igual que si la hubiera elegido. Ahora es una tarea pendiente más.
+    goal: "", kpis: [], videoTypeKey: "", template: null,
     canal: [], execution: ["Video Assembly"], editing: ["remotion"],
     scriptMode: "Generate", storyboardMode: "Generate", storyboardSkip: "", inspirationMode: "N/A",
     durationSec: "", aspectRatio: "9:16", outputFormat: OUTPUT_FORMATS[0],
@@ -1531,9 +1602,9 @@ function Form({ cfg, source, warnings, onForget }) {
   const [tab, setTab] = useState("s00");
   const [visited, setVisited] = useState(["s00"]);
 
-  const vt = VIDEO_TYPES.find((t) => t.key === s.videoTypeKey);
-  const isSocial = vt.key === "social";
-  const kpiOptions = (cfg.kpis || {})[vt.key] || [];
+  const vt = VIDEO_TYPES.find((t) => t.key === s.videoTypeKey) || null;
+  const isSocial = !!vt && vt.key === "social";
+  const kpiOptions = vt ? ((cfg.kpis || {})[vt.key] || []) : [];
   const pending = deriveExecutionPending(s.execution, s.editing);
   const errors = formErrors(s, cfg);
   const intake = useMemo(() => buildIntakeV2(s, cfg, new Date().toISOString()), [JSON.stringify(s)]);
@@ -1620,7 +1691,7 @@ function Form({ cfg, source, warnings, onForget }) {
   // `intake-validator.js` still raises it — this is the FORM's list, not the validator's, and the
   // two answer different questions. A block nobody can act on is noise wearing a warning's clothes.
   const blocksFor = {
-    "01": vt.phase ? [`${vt.label}: we record the request, but we do not produce them yet.`] : [],
+    "01": vt && vt.phase ? [`${vt.label}: we record the request, but we do not produce them yet.`] : [],
     "02": pending.length ? [`${pending.join(", ")}: there is no production line behind ${pending.length > 1 ? "these" : "this"} yet.`] : [],
     "03": [
       ...(s.creationTypes.includes("VoiceOver")
@@ -1780,7 +1851,7 @@ function Form({ cfg, source, warnings, onForget }) {
         <h2><span className="n">00</span> Objectives</h2>
         <label htmlFor="f-goal">What is this campaign for, in your own words?</label>
         <textarea id="f-goal" value={s.goal} aria-invalid={errors.some((e) => e.field === "f-goal") ? "true" : undefined} onChange={(e) => up({ goal: e.target.value })} placeholder="e.g. Drive trial sign-ups from lapsed users in our main market." />
-        <ChipGroup id="g-kpis" legend={`KPIs for a ${vt.label.toLowerCase()} video`} hint="Recorded with your brief. We do not measure them — the work ends at approved files.">
+        <ChipGroup id="g-kpis" legend={vt ? `KPIs for a ${vt.label.toLowerCase()} video` : "KPIs"} hint="Recorded with your brief. We do not measure them — the work ends at approved files.">
           {kpiOptions.map((k) => <Chip key={k} on={s.kpis.includes(k)} onClick={() => up({ kpis: toggle(s.kpis, k) })}>{k}</Chip>)}
           {!kpiOptions.length && <span className="hint">This project declares no KPIs for this video type.</span>}
         </ChipGroup>
@@ -1802,7 +1873,7 @@ function Form({ cfg, source, warnings, onForget }) {
           <option value="">From scratch</option>
           {Object.keys(cfg.templates).map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        {vt.phase && <div className="hint">You can pick this and we record it — we just do not produce it yet.</div>}
+        {vt && vt.phase && <div className="hint">You can pick this and we record it — we just do not produce it yet.</div>}
       </section>
       )}
 
@@ -1830,10 +1901,10 @@ function Form({ cfg, source, warnings, onForget }) {
           legend={`Channel — where it ships ${isSocial ? "" : "(social only)"}`}
           hint={isSocial
             ? "Picking a channel sets the format defaults below — all editable. 'Meta' covers both Instagram and Facebook."
-            : `${vt.label} has no channel, so we cannot check the layout against a platform's safe area. That is reported as not applicable — never as passed.`}
+            : `${vt ? vt.label : "This video type"} has no channel, so we cannot check the layout against a platform's safe area. That is reported as not applicable — never as passed.`}
         >
           {CANAL.map((c) => (
-            <Chip key={c} on={s.canal.includes(c)} disabled={!isSocial} title={isSocial ? undefined : `${vt.label} ships no channel`} onClick={() => toggleCanal(c)}>{c}</Chip>
+            <Chip key={c} on={s.canal.includes(c)} disabled={!isSocial} title={isSocial ? undefined : `${vt ? vt.label : "No video type picked"} — no channel`} onClick={() => toggleCanal(c)}>{c}</Chip>
           ))}
         </ChipGroup>
 
@@ -1899,7 +1970,7 @@ function Form({ cfg, source, warnings, onForget }) {
                 <div className="grid2">
                   <select id="f-sheet" value={s.sheetChannel} onChange={(e) => up({ sheetChannel: e.target.value })}>
                     <option value="">no channel — delivery is manual</option>
-                    {SHEET_CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {SHEET_CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
                   <input type="text" aria-label="Review sheet recipient" value={s.sheetRecipient} onChange={(e) => up({ sheetRecipient: e.target.value })} placeholder="channel, doc or address" />
                 </div>
@@ -1915,8 +1986,8 @@ function Form({ cfg, source, warnings, onForget }) {
           </React.Fragment>
         )}
 
-        <ChipGroup id="g-upload" legend="Assets Upload" hint="Pick Creation and/or Upload — an intake that creates nothing and uploads nothing has no material to render.">
-          {UPLOAD_KINDS.map((k) => <Chip key={k} on={s.uploadKinds.includes(k)} onClick={() => up({ uploadKinds: toggle(s.uploadKinds, k) })}>{k}</Chip>)}
+        <ChipGroup id="g-upload" legend="Assets Upload" hint="Pick Creation and/or Upload — a brief that creates nothing and uploads nothing leaves us nothing to work with.">
+          {UPLOAD_KINDS.map((k) => <Chip key={k.value} on={s.uploadKinds.includes(k.value)} onClick={() => up({ uploadKinds: toggle(s.uploadKinds, k.value) })}>{k.label}</Chip>)}
         </ChipGroup>
       </section>
       )}
@@ -1979,11 +2050,20 @@ function Form({ cfg, source, warnings, onForget }) {
         </section>
       )}
 
-      <section className="card">
-        <h2><span className="n">→</span> intake.json</h2>
-        <pre tabIndex="0" aria-label="The emitted intake.json">{JSON.stringify(intake, null, 2)}</pre>
-        <div className="hint">This is the brief your answers produce. You do not need to read it — it travels with the request.</div>
-      </section>
+      {/* El documento emitido, y SÓLO donde alguien va a hacer algo con él.
+          En un build con endpoint la persona presiona Start Project y el JSON viaja solo: mostrarle
+          200 líneas que no tiene que leer, copiar ni guardar no le da una decisión, le da ruido en
+          la sección más larga de la página. Donde NO hay endpoint el panel es la salida real — se
+          termina descargando el archivo — así que ahí se queda tal cual, junto al botón que lo baja.
+          El botón «Copy JSON» sigue en el ledger en los dos casos: copiar el documento es una acción
+          que alguien puede querer; leerlo mientras llena el formulario no lo es. */}
+      {!SUBMIT_ENDPOINT && (
+        <section className="card">
+          <h2><span className="n">→</span> intake.json</h2>
+          <pre tabIndex="0" aria-label="The emitted intake.json">{JSON.stringify(intake, null, 2)}</pre>
+          <div className="hint">This is the brief your answers produce. It is the file the Download button writes.</div>
+        </section>
+      )}
 
       {/* The ledger. What this will cost and what it will stop, in view the whole way down. */}
       <div className="ledger">
