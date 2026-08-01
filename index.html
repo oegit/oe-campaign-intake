@@ -784,6 +784,28 @@ function reviewerStatusOf(cfg, code) {
 }
 
 /**
+ * ── The voice, and the OTHER half of D2 ───────────────────────────────────────────────────────
+ *
+ * `reviewerStatusOf` answers *has a human reviewed the TEXT in this language?*. These answer
+ * *has anybody HEARD this voice speaking it?* — a different fact about a different person, and the
+ * one the form had no way to show because it collected no voice at all.
+ *
+ * The statuses are duplicated from `scripts/resolve-voice.js` because this file is inlined into a
+ * self-contained page and cannot `require` anything. That duplication is checked rather than
+ * trusted: `intake-form.test.js` requires the real module and fails if the two sets diverge.
+ *
+ * Matching is by EXACT language code, exactly as the validator does it — letting `es-ES` inherit an
+ * `es` status would show a green badge for a market nobody has listened to.
+ */
+const VOICE_READY_STATUSES = ["verified", "gate-approved"];
+const voiceOf = (cfg, ref) => (cfg.voices || []).find((v) => v.ref === ref) || null;
+function voiceStatusOf(cfg, ref, code) {
+  const v = voiceOf(cfg, ref);
+  return (v && v.verified && v.verified[code]) || "pending";
+}
+const voiceReadyIn = (cfg, ref, code) => VOICE_READY_STATUSES.indexOf(voiceStatusOf(cfg, ref, code)) !== -1;
+
+/**
  * The estimate, before any credit is spent (R10 · I1).
  *
  * Credits are computed; USD is NOT. No credit→USD rate is recorded anywhere in this repo, and the
@@ -856,6 +878,10 @@ function buildIntakeV2(s, cfg, now) {
   const voiceover = wantsVo
     ? {
         mode: s.voMode || "generate",
+        // V1/D2: which voice speaks this campaign. Emitted only when one is picked — an absent
+        // voiceRef means nothing is bound, which the validator warns about rather than blocking,
+        // and inventing a default here would bind a voice nobody chose.
+        ...(s.voiceRef ? { voiceRef: s.voiceRef } : {}),
         languages: (s.voLangs || []).map((code) => {
           const status = reviewerStatusOf(cfg, code);
           return { lang: code, reviewerStatus: status, renderBlocked: status !== "confirmed" };
@@ -952,6 +978,13 @@ function formErrors(s, cfg) {
   if (!(s.creationTypes || []).length && !(s.uploadKinds || []).length)
     at("03", "g-creation", "pick Assets Creation and/or Assets Upload — a brief that creates nothing and uploads nothing leaves us nothing to work with");
   if ((s.creationTypes || []).includes("VoiceOver") && !(s.voLangs || []).length) at("03", "g-volangs", "VoiceOver needs at least one language");
+  // A VoiceOver with no voice is INCOMPLETE, not a legitimate recorded state: nothing binds a voice
+  // to the script, so mix-vo.js has nothing to resolve and the D2 voice gate has nothing to check.
+  // Guarded on the library being non-empty, because a project that declares no voice cannot offer
+  // one — `configWarnings` already says so, and refusing to export there would make the form
+  // unexportable for a reason the person filling it cannot fix.
+  if ((s.creationTypes || []).includes("VoiceOver") && (cfg.voices || []).length && !s.voiceRef)
+    at("03", "g-voice", "VoiceOver needs a voice — it is what the script will be spoken in");
   if (s.storyboardMode === "N/A" && (s.storyboardSkip || "").trim().toUpperCase() !== SKIP_PHRASE)
     at("02", "f-skip", `to skip the storyboard, type exactly: ${SKIP_PHRASE}`);
   // NOT an error, deliberately — see `deliveryBlocked` below. A missing folder is unassigned, not
@@ -1009,6 +1042,7 @@ if (typeof module !== "undefined" && module.exports) {
     MODES, RATIOS, OUTPUT_FORMATS, CREATION_TYPES, UPLOAD_KINDS, SHEET_CHANNELS, SKIP_PHRASE,
     REQUIRED_CONFIG_KEYS, missingConfigKeys, configWarnings, jsonErrorContext,
     deriveExecutionPending, deliveryUnassigned, reviewerStatusOf,
+    VOICE_READY_STATUSES, voiceOf, voiceStatusOf, voiceReadyIn,
     estimate, buildIntakeV2, formErrors, formErrorMessages, buildSubmission, submissionErrors,
     luminance, contrast, onColorFor, tint, shade, accessibleBrandText, ratioReport,
   };
@@ -1124,7 +1158,11 @@ const PROJECT_CONFIG = {
       "ref": "andres",
       "provider": "fish-audio",
       "kind": "cloned",
-      "role": "narrator"
+      "role": "narrator",
+      "verified": {
+        "es-419": "verified",
+        "pt-BR": "gate-approved"
+      }
     }
   ],
   "music": {
@@ -1590,7 +1628,7 @@ function Form({ cfg, source, warnings, onForget }) {
     canal: [], execution: ["Video Assembly"], editing: ["remotion"],
     scriptMode: "Generate", storyboardMode: "Generate", storyboardSkip: "", inspirationMode: "N/A",
     durationSec: "", aspectRatio: "9:16", outputFormat: OUTPUT_FORMATS[0],
-    creationTypes: [], creationPrompt: "", voMode: "generate", voLangs: [],
+    creationTypes: [], creationPrompt: "", voMode: "generate", voLangs: [], voiceRef: "",
     sheetChannel: "", sheetRecipient: "", signOff: [], uploadKinds: [],
     campaign: "", ticketNumber: "", ticketLink: "", deadline: "", utm: "",
     driveFolder: "", count: 1, compliance: [],
@@ -1703,6 +1741,14 @@ function Form({ cfg, source, warnings, onForget }) {
         ? s.voLangs
             .filter((code) => { const so = signOffOf(code); return !(so.reviewer && so.at); })
             .map((code) => `Voice-over in ${code}: waiting on a native speaker to approve the script.`)
+        : []),
+      // V1/D2, the other half: the reviewer of the TEXT and the listener of the VOICE are two
+      // different people answering two different questions, so this is its own line and never
+      // folded into the one above.
+      ...(s.creationTypes.includes("VoiceOver") && s.voiceRef
+        ? s.voLangs
+            .filter((code) => !voiceReadyIn(cfg, s.voiceRef, code))
+            .map((code) => `The voice "${s.voiceRef}" in ${code}: nobody has listened to it speaking this language yet.`)
         : []),
       ...(s.voMode === "translate" && s.creationTypes.includes("VoiceOver")
         ? ["Dubbing an existing voice-over into another language is not available yet."]
@@ -1962,6 +2008,25 @@ function Form({ cfg, source, warnings, onForget }) {
                   {l.code} <span className={"badge " + (l.reviewer || "pending")}>{l.reviewer || "pending"}</span>
                 </Chip>
               ))}
+            </ChipGroup>
+
+            {/*
+              The voice, and its status IN THE LANGUAGES THIS BRIEF PICKED — not in the abstract.
+              A voice is `verified` per language, so a badge that ignored the selection would say
+              "ready" about a language nobody chose. With no language picked yet there is nothing to
+              be ready FOR, and the chip says so rather than showing a green badge by default.
+            */}
+            <ChipGroup id="g-voice" legend="Voice" radio hint="The voice has to have been heard in each language before that language renders. Picking one that has not been is fine — we record it and it waits.">
+              {cfg.voices.map((v) => {
+                const per = s.voLangs.map((code) => ({ code, status: voiceStatusOf(cfg, v.ref, code) }));
+                const worst = per.some((p) => !voiceReadyIn(cfg, v.ref, p.code)) ? "pending" : "confirmed";
+                return (
+                  <Chip key={v.ref} radio on={s.voiceRef === v.ref} onClick={() => up({ voiceRef: v.ref })}>
+                    {v.ref}
+                    {per.length > 0 && <span className={"badge " + worst}>{per.map((p) => `${p.code}: ${p.status}`).join(" · ")}</span>}
+                  </Chip>
+                );
+              })}
             </ChipGroup>
 
             {s.voLangs.length > 0 && (

@@ -20,7 +20,6 @@ What deliberately did **not** travel:
 - `_channels_note`
 - `_languages_note`
 - `voices[].name`
-- `voices[].verified`
 - `_voices_note`
 - `music.alternatives`
 - `_kpis_note`
@@ -58,9 +57,9 @@ curl -s <this page's URL> | shasum -a 256
 node scripts/publish-intake.js --project open-english --endpoint <url> --token <token> --out <dir>
 ```
 
-    1a2e7f28b9f6537b356a203b74dbd212788d55c2d9b84f95a241fa91c8f7563b
+    7ac2502d340deef0800910d2127e7f314268ca5a9bd57f15f06a77c35145ccc5
 
-Built from source commit `812c3db55650c5a399299dc1b95a300665f56372`.
+Built from source commit `bc1964ce7c2bd002e97ae3720f1872977c0d6bb9`.
 
 If those disagree, the page you are looking at is not the one that was reviewed.
 
