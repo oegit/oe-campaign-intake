@@ -516,9 +516,47 @@ const VIDEO_TYPES = [
   { key: "general", label: "General" },
 ];
 
-/** 02 Channel · execution. Only `Video Assembly` has a pipeline; the rest are recorded and blocked. */
+/**
+ * THE RUNNABLE PAIRS (spec §10.1b, decision Y1) — capability is a PAIR, not a set of words.
+ *
+ * `execution` says how the video is made, `editing` says with what tool. §10.1b was always written
+ * as a table of pairs, and the code could not read one: it filtered the two lists SEPARATELY and
+ * unioned the results, so `Motion Graphics` blocked on its own term no matter what tool it was
+ * paired with. That is why "add Remotion as an editing tool for Motion Graphics" was a no-op —
+ * `remotion` had always been selectable beside it. Nothing mapped anything.
+ *
+ * Enabling a path is now adding one line here. Removing a tool from a path is removing one line.
+ * Neither is a filter widening, and neither can accidentally enable a second path.
+ */
+const RUNNABLE_PAIRS = [
+  { execution: "Video Assembly", editing: "remotion" },
+  // Y1, v0.8 — the first execution to leave the blocked list. Motion graphics is animated text,
+  // shapes and branded elements with no generated footage, which is Remotion's native domain, so
+  // this needed no new provider and no new credits surface. `Motion Graphics → aftereffects` is
+  // deliberately NOT here and still blocks: a pair is the unit of capability.
+  { execution: "Motion Graphics", editing: "remotion" },
+];
+
+const isRunnablePair = (execution, editing) =>
+  RUNNABLE_PAIRS.some((p) => p.execution === execution && p.editing === editing);
+
+/** 02 Channel · execution. A value here has a pipeline only in the PAIRS that name it. */
 const EXECUTIONS = ["Video Assembly", "Motion Graphics", "Brand Character", "UGC"];
-const IMPLEMENTED_EXECUTIONS = ["Video Assembly"];
+
+/**
+ * What the form marks with a "pending" badge — DERIVED from the pairs, never a parallel list.
+ *
+ * The badge answers a weaker question than the render block does, and the difference is the honest
+ * part: it means "this word has no runnable pair AT ALL", so `Brand Character` and `aftereffects`
+ * are badged permanently while `Motion Graphics` is not. Whether a PARTICULAR combination runs is
+ * answered by `deriveExecutionPending` and shown in the section's own pending summary — because
+ * `Motion Graphics → aftereffects` blocks while `Motion Graphics → remotion` runs, and no badge on
+ * a single chip can say that.
+ *
+ * Derived rather than declared because two hand-maintained lists WILL disagree with the pairs, and
+ * the way they disagree is a chip that reads runnable next to a block that fires.
+ */
+const IMPLEMENTED_EXECUTIONS = RUNNABLE_PAIRS.map((p) => p.execution).filter((v, i, a) => a.indexOf(v) === i);
 
 /**
  * 02 Channel · editing. Same shape, same rule — and the VALUE is the schema's enum, not a display
@@ -532,7 +570,7 @@ const EDITING = [
   { value: "premiere", label: "Adobe Premiere" },
   { value: "aftereffects", label: "After Effects" },
 ];
-const IMPLEMENTED_EDITING = ["remotion"];
+const IMPLEMENTED_EDITING = RUNNABLE_PAIRS.map((p) => p.editing).filter((v, i, a) => a.indexOf(v) === i);
 
 /**
  * 02 Channel · canal. SOCIAL ONLY and therefore optional — with no canal there is no R3
@@ -744,18 +782,33 @@ function ratioReport(brand, surface = "#ffffff") {
 // ── Derivations ───────────────────────────────────────────────────────────────────────────────
 
 /**
- * W3 generalized: which selections have no pipeline behind them.
+ * W3 generalized, and now pair-aware (Y1): which selections have no pipeline behind them.
  *
  * DERIVED from the selections, never read from the payload — a form that forgets to mark
  * `executionPending` must not be able to smuggle an unbuildable run past the gate. The validator
  * derives it the same way and warns when the emitter's list disagrees, so this is the emitter
  * holding up its end rather than the only line of defence.
+ *
+ * The unit that comes back is `"<execution> → <editing>"`, and that is the visible improvement: the
+ * old shape returned a lone word, so a brief selecting `Video Assembly` and `UGC` reported "UGC"
+ * with no way to say the OTHER selection was fine. Now every unrunnable pair names itself.
+ *
+ * An execution with NO tool declared is unrunnable too, and says so as `"<execution> → (no editing
+ * tool selected)"`. Under the old union it passed silently whenever the execution word happened to
+ * be implemented — a brief that never said how the video gets made, reading as runnable.
  */
 function deriveExecutionPending(execution, editing) {
-  return [
-    ...(execution || []).filter((e) => !IMPLEMENTED_EXECUTIONS.includes(e)),
-    ...(editing || []).filter((e) => !IMPLEMENTED_EDITING.includes(e)),
-  ];
+  const execs = execution || [];
+  const tools = editing || [];
+  const pending = [];
+  for (const e of execs) {
+    if (!tools.length) {
+      pending.push(`${e} → (no editing tool selected)`);
+      continue;
+    }
+    for (const t of tools) if (!isRunnablePair(e, t)) pending.push(`${e} → ${t}`);
+  }
+  return pending;
 }
 
 /**
@@ -806,6 +859,43 @@ function voiceStatusOf(cfg, ref, code) {
 const voiceReadyIn = (cfg, ref, code) => VOICE_READY_STATUSES.indexOf(voiceStatusOf(cfg, ref, code)) !== -1;
 
 /**
+ * MOTION scene types (spec §8.1b, decision Y2) — drawn by Remotion from Layer 2 tokens, generating
+ * nothing, so their generation cost is ZERO and that is a fact about the PIPELINE, not about a
+ * project's prices.
+ *
+ * This is the second copy of the list, and it is checked rather than trusted: `scripts/scene-types.js`
+ * reads this array out of this file by name and fails the run when it disagrees with the schemas.
+ * The copy exists because this file is inlined into a single self-contained HTML page and cannot
+ * `require` anything — the same constraint that makes the whole intake one file.
+ */
+const MOTION_SCENE_TYPES = ["text_card_animated", "kinetic_typography", "lower_third", "logo_sting", "transition", "stat_callout"];
+
+/**
+ * What one template scene costs to GENERATE, in credits.
+ *
+ * Three sources, in order, and the order is the decision (Y3):
+ *
+ *   1. **Motion is free, from Layer 1.** No provider is involved, so no project can be charged for
+ *      it and no project should have to declare that. A Layer 2 `byType` entry cannot make a motion
+ *      scene cost credits — a project may measure its own prices, it may not contradict the pipeline.
+ *   2. **`byType`**, when Layer 2 has measured a particular non-motion type.
+ *   3. **The level**, which is what every estimate used before v0.8.
+ *
+ * The fallback to the level is what keeps a NEW scene type from silently pricing at zero: an
+ * unlisted type keeps its level's cost, which errs toward over-projecting against a ceiling. The
+ * inverse — defaulting an unknown type to 0 — is F5's lesson exactly: a number true of a different
+ * path, presented as this one's.
+ */
+function sceneCredits(sce, scene) {
+  const level = scene && scene.level;
+  const type = scene && (scene.slotType || scene.proposedSlotType || scene.sceneType);
+  if (type && MOTION_SCENE_TYPES.indexOf(type) !== -1) return 0;
+  const byType = (sce && sce.byType) || {};
+  if (type && typeof byType[type] === "number") return byType[type];
+  return (sce && typeof sce[level] === "number" ? sce[level] : 0);
+}
+
+/**
  * The estimate, before any credit is spent (R10 · I1).
  *
  * Credits are computed; USD is NOT. No credit→USD rate is recorded anywhere in this repo, and the
@@ -818,7 +908,7 @@ function estimate(cfg, { template, count, voMode }) {
   const tmpl = template ? (cfg.templates || {})[template] : null;
   const sce = cfg.sceneCostEstimate || {};
   const perVideoCredits = tmpl
-    ? (tmpl.scenes || []).reduce((s, sc) => s + (sce[sc.level] || 0), 0)
+    ? (tmpl.scenes || []).reduce((s, sc) => s + sceneCredits(sce, sc), 0)
     : (sce.slot || 0) * 2;
   const n = Math.max(0, Number(count) || 0);
   const notCaptured = ["credit→USD rate is not recorded in this repo, so the USD ceiling cannot be checked here"];
@@ -1039,10 +1129,12 @@ function submissionErrors(s, cfg) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     VIDEO_TYPES, EXECUTIONS, IMPLEMENTED_EXECUTIONS, EDITING, IMPLEMENTED_EDITING, CANAL,
+    RUNNABLE_PAIRS, isRunnablePair,
     MODES, RATIOS, OUTPUT_FORMATS, CREATION_TYPES, UPLOAD_KINDS, SHEET_CHANNELS, SKIP_PHRASE,
     REQUIRED_CONFIG_KEYS, missingConfigKeys, configWarnings, jsonErrorContext,
     deriveExecutionPending, deliveryUnassigned, reviewerStatusOf,
     VOICE_READY_STATUSES, voiceOf, voiceStatusOf, voiceReadyIn,
+    MOTION_SCENE_TYPES, sceneCredits,
     estimate, buildIntakeV2, formErrors, formErrorMessages, buildSubmission, submissionErrors,
     luminance, contrast, onColorFor, tint, shade, accessibleBrandText, ratioReport,
   };
