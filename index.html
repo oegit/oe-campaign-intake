@@ -852,6 +852,22 @@ function reviewerStatusOf(cfg, code) {
  */
 const VOICE_READY_STATUSES = ["verified", "gate-approved"];
 const voiceOf = (cfg, ref) => (cfg.voices || []).find((v) => v.ref === ref) || null;
+/**
+ * Every language the form's state says this campaign is in — the UI mirror of
+ * `scripts/intake-languages.js → campaignLanguages()`, and the list the sign-off rows are drawn for.
+ *
+ * It has to be the union, not the VoiceOver list, for the same reason the gate is: the sign-off UI
+ * used to live INSIDE the VoiceOver fragment, so a motion-only campaign — no voice, on-screen copy
+ * in a language a native speaker has to read — had no row to record a sign-off in at all (B19).
+ * Spoken first, de-duplicated: a language named in both places is one language and one review.
+ */
+function formCampaignLanguages(s) {
+  const spoken = (s.creationTypes || []).includes("VoiceOver") ? s.voLangs || [] : [];
+  const out = [];
+  for (const c of [...spoken, ...(s.copyLangs || [])]) if (c && !out.includes(c)) out.push(c);
+  return out;
+}
+
 function voiceStatusOf(cfg, ref, code) {
   const v = voiceOf(cfg, ref);
   return (v && v.verified && v.verified[code]) || "pending";
@@ -964,6 +980,19 @@ function buildIntakeV2(s, cfg, now) {
   const editing = s.editing && s.editing.length ? s.editing : ["remotion"];
   const pending = deriveExecutionPending(execution, editing);
 
+  // The D2 sheet, one shape and two homes. It rides under `voiceover` when the campaign has one,
+  // because that is where it has always lived and every document on disk carries it there; and at
+  // `content.reviewSheet` when it does not, because a motion-only campaign still ships on-screen
+  // copy in a language a native speaker has to sign off (Y5) and until this existed there was
+  // NOWHERE to record that — the gate does not close on a sheet having been sent, it closes on a
+  // `signOff` entry, and a document with no field for one can never produce it.
+  // `intake-validator.js → reviewSignOff()` is the single reader of both.
+  const reviewSheet = () => ({
+    channel: s.sheetChannel || null,
+    recipient: s.sheetRecipient || null,
+    signOff: (s.signOff || []).filter((x) => x && x.lang && x.reviewer && x.at),
+  });
+
   const wantsVo = (s.creationTypes || []).includes("VoiceOver");
   const voiceover = wantsVo
     ? {
@@ -976,11 +1005,27 @@ function buildIntakeV2(s, cfg, now) {
           const status = reviewerStatusOf(cfg, code);
           return { lang: code, reviewerStatus: status, renderBlocked: status !== "confirmed" };
         }),
-        reviewSheet: {
-          channel: s.sheetChannel || null,
-          recipient: s.sheetRecipient || null,
-          signOff: (s.signOff || []).filter((x) => x && x.lang && x.reviewer && x.at),
-        },
+        reviewSheet: reviewSheet(),
+      }
+    : null;
+
+  // WHAT THIS CAMPAIGN WRITES ON SCREEN, as a language list (B19). Until 2026-08-05 a campaign's
+  // languages were discoverable ONLY through the VoiceOver, and the one motion-only brief that has
+  // actually been submitted came back declaring no language at all — so `campaignLanguages()`
+  // returned `[]`, the D2 loop ran zero times, and the form reported render-ready on a campaign
+  // whose master went on to put Brazilian ad copy on screen.
+  //
+  // A LANGUAGE LIST AND NOT THE COPY ITSELF, deliberately. The gate reads
+  // `templateVariables[<scene>].onScreenCopy`, which is scene-keyed — and a brief has no scene
+  // structure and nobody types finished on-screen text into an intake form. What a brief knows is
+  // which markets it is for; that is the question, so that is what is asked.
+  const copyLangs = (s.copyLangs || []).slice();
+  const onScreenCopy = copyLangs.length
+    ? {
+        languages: copyLangs.map((code) => {
+          const status = reviewerStatusOf(cfg, code);
+          return { lang: code, reviewerStatus: status, renderBlocked: status !== "confirmed" };
+        }),
       }
     : null;
 
@@ -1020,7 +1065,12 @@ function buildIntakeV2(s, cfg, now) {
       aspectRatio: s.aspectRatio || "9:16",
       outputFormat: s.outputFormat || OUTPUT_FORMATS[0],
     },
-    content: { assetsCreation, assetsUpload },
+    // `reviewSheet` rides under `voiceover` when there is one and at content level when there is
+    // not — unchanged, and it stays correct now that a campaign can write a language it does not
+    // speak: the sheet carries ONE `signOff` list covering every campaign language (the UI asks per
+    // campaign language, not per VO language), and `reviewSignOff()` unions every home anyway. Which
+    // home it lands in is a fact about where the sheet was born, not about what it records.
+    content: { assetsCreation, assetsUpload, ...(onScreenCopy ? { onScreenCopy } : {}), ...(voiceover ? {} : { reviewSheet: reviewSheet() }) },
     metadata: {
       campaign: s.campaign || "",
       ticket: { number: ticketNumber, link: s.ticketLink || null },
@@ -1132,7 +1182,7 @@ if (typeof module !== "undefined" && module.exports) {
     RUNNABLE_PAIRS, isRunnablePair,
     MODES, RATIOS, OUTPUT_FORMATS, CREATION_TYPES, UPLOAD_KINDS, SHEET_CHANNELS, SKIP_PHRASE,
     REQUIRED_CONFIG_KEYS, missingConfigKeys, configWarnings, jsonErrorContext,
-    deriveExecutionPending, deliveryUnassigned, reviewerStatusOf,
+    deriveExecutionPending, deliveryUnassigned, reviewerStatusOf, formCampaignLanguages,
     VOICE_READY_STATUSES, voiceOf, voiceStatusOf, voiceReadyIn,
     MOTION_SCENE_TYPES, sceneCredits,
     estimate, buildIntakeV2, formErrors, formErrorMessages, buildSubmission, submissionErrors,
@@ -1758,7 +1808,7 @@ function Form({ cfg, source, warnings, onForget }) {
     canal: [], execution: ["Video Assembly"], editing: ["remotion"],
     scriptMode: "Generate", storyboardMode: "Generate", storyboardSkip: "", inspirationMode: "N/A",
     durationSec: "", aspectRatio: "9:16", outputFormat: OUTPUT_FORMATS[0],
-    creationTypes: [], creationPrompt: "", voMode: "generate", voLangs: [], voiceRef: "",
+    creationTypes: [], creationPrompt: "", voMode: "generate", voLangs: [], voiceRef: "", copyLangs: [],
     sheetChannel: "", sheetRecipient: "", signOff: [], uploadKinds: [],
     campaign: "", ticketNumber: "", ticketLink: "", deadline: "", utm: "",
     driveFolder: "", count: 1, compliance: [],
@@ -1796,6 +1846,9 @@ function Form({ cfg, source, warnings, onForget }) {
     up({ signOff: [...rest, { ...cur, [field]: value }] });
   };
   const signOffOf = (lang) => s.signOff.find((x) => x.lang === lang) || { reviewer: "", at: "" };
+  // Every language this campaign is IN — spoken or written. The sign-off rows are drawn from this
+  // and not from `voLangs`, because a motion-only campaign has copy and no voice (B19/C19).
+  const campaignLangs = formCampaignLanguages(s);
 
   const download = () => {
     const blob = new Blob([JSON.stringify(intake, null, 2)], { type: "application/json" });
@@ -1862,16 +1915,17 @@ function Form({ cfg, source, warnings, onForget }) {
     "01": vt && vt.phase ? [`${vt.label}: we record the request, but we do not produce them yet.`] : [],
     "02": pending.length ? [`${pending.join(", ")}: there is no production line behind ${pending.length > 1 ? "these" : "this"} yet.`] : [],
     "03": [
-      ...(s.creationTypes.includes("VoiceOver")
-        ? s.voLangs
-            .filter((code) => reviewerStatusOf(cfg, code) !== "confirmed")
-            .map((code) => `Voice-over in ${code}: nobody is assigned to review this language yet.`)
-        : []),
-      ...(s.creationTypes.includes("VoiceOver")
-        ? s.voLangs
-            .filter((code) => { const so = signOffOf(code); return !(so.reviewer && so.at); })
-            .map((code) => `Voice-over in ${code}: waiting on a native speaker to approve the script.`)
-        : []),
+      // KEYED ON THE CAMPAIGN'S LANGUAGES, NOT THE VOICEOVER'S — the same re-keying the validator's
+      // gate went through (Y5, and B19 for the form). This list used to open with
+      // `s.creationTypes.includes("VoiceOver")`, so a motion-only brief showed NO block for a
+      // language whose copy nobody had signed off, which is the exact silence B19 measured on the
+      // one campaign that has shipped through this page.
+      ...campaignLangs
+        .filter((code) => reviewerStatusOf(cfg, code) !== "confirmed")
+        .map((code) => `${code}: nobody is assigned to review this language yet.`),
+      ...campaignLangs
+        .filter((code) => { const so = signOffOf(code); return !(so.reviewer && so.at); })
+        .map((code) => `${code}: waiting on a native speaker to approve the copy and the script.`),
       // V1/D2, the other half: the reviewer of the TEXT and the listener of the VOICE are two
       // different people answering two different questions, so this is its own line and never
       // folded into the one above.
@@ -2159,25 +2213,47 @@ function Form({ cfg, source, warnings, onForget }) {
               })}
             </ChipGroup>
 
-            {s.voLangs.length > 0 && (
-              <React.Fragment>
-                <label htmlFor="f-sheet">Review sheet — sending it is optional, approval is not</label>
-                <div className="grid2">
-                  <select id="f-sheet" value={s.sheetChannel} onChange={(e) => up({ sheetChannel: e.target.value })}>
-                    <option value="">no channel — delivery is manual</option>
-                    {SHEET_CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
-                  <input type="text" aria-label="Review sheet recipient" value={s.sheetRecipient} onChange={(e) => up({ sheetRecipient: e.target.value })} placeholder="channel, doc or address" />
-                </div>
-                {s.voLangs.map((lang) => (
-                  <div key={lang} className="grid2">
-                    <input type="text" aria-label={`${lang} — reviewer who signed off`} value={signOffOf(lang).reviewer} onChange={(e) => setSignOff(lang, "reviewer", e.target.value)} placeholder={`${lang} — reviewer who signed off`} />
-                    <input type="date" aria-label={`${lang} — date of sign-off`} value={signOffOf(lang).at} onChange={(e) => setSignOff(lang, "at", e.target.value)} />
-                  </div>
-                ))}
-                <div className="hint">The sheet is always generated. Leaving a sign-off empty is honest and blocks that language's render — the D2 gate closes on a recorded sign-off, never on a sheet having been sent.</div>
-              </React.Fragment>
-            )}
+          </React.Fragment>
+        )}
+
+        {/*
+          ON-SCREEN COPY — INDEPENDENT OF THE VOICEOVER, and that independence is the whole point.
+          Until this question existed a campaign's languages were discoverable only through the
+          voice, so a motion-only brief declared none, `campaignLanguages()` returned [], and the D2
+          loop ran zero times on a campaign that went on to put ad copy on screen (B19). It asks for
+          LANGUAGES, not for the copy itself: a brief has no scene structure to key copy on, and
+          which markets the video is for is the thing a brief actually knows.
+        */}
+        <ChipGroup id="g-copylangs" legend="On-screen copy" hint="Which languages will this video carry text in? Ask it even with no VoiceOver — on-screen text is localized content and a native speaker has to sign it off before it renders.">
+          {cfg.languages.map((l) => (
+            <Chip key={l.code} on={s.copyLangs.includes(l.code)} onClick={() => up({ copyLangs: toggle(s.copyLangs, l.code) })}>
+              {l.code} <span className={"badge " + (l.reviewer || "pending")}>{l.reviewer || "pending"}</span>
+            </Chip>
+          ))}
+        </ChipGroup>
+
+        {/*
+          The sign-off rows are drawn for every CAMPAIGN language — spoken or written. They used to
+          sit inside the VoiceOver fragment above, so a campaign with no voice had no row to record
+          a sign-off in, which is the supply-side half of the same defect (C19).
+        */}
+        {campaignLangs.length > 0 && (
+          <React.Fragment>
+            <label htmlFor="f-sheet">Review sheet — sending it is optional, approval is not</label>
+            <div className="grid2">
+              <select id="f-sheet" value={s.sheetChannel} onChange={(e) => up({ sheetChannel: e.target.value })}>
+                <option value="">no channel — delivery is manual</option>
+                {SHEET_CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+              <input type="text" aria-label="Review sheet recipient" value={s.sheetRecipient} onChange={(e) => up({ sheetRecipient: e.target.value })} placeholder="channel, doc or address" />
+            </div>
+            {campaignLangs.map((lang) => (
+              <div key={lang} className="grid2">
+                <input type="text" aria-label={`${lang} — reviewer who signed off`} value={signOffOf(lang).reviewer} onChange={(e) => setSignOff(lang, "reviewer", e.target.value)} placeholder={`${lang} — reviewer who signed off`} />
+                <input type="date" aria-label={`${lang} — date of sign-off`} value={signOffOf(lang).at} onChange={(e) => setSignOff(lang, "at", e.target.value)} />
+              </div>
+            ))}
+            <div className="hint">The sheet is always generated. Leaving a sign-off empty is honest and blocks that language's render — the D2 gate closes on a recorded sign-off, never on a sheet having been sent. A sign-off can also be recorded later with <code>review-sheet.js --record</code>.</div>
           </React.Fragment>
         )}
 
