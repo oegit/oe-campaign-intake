@@ -57,9 +57,9 @@ curl -s <this page's URL> | shasum -a 256
 node scripts/publish-intake.js --project open-english --endpoint <url> --token <token> --out <dir>
 ```
 
-    05eaf60805497e2e668b35f33bcfbd996240b65282ce75685ff90101c8efbb43
+    c9031d37af0613d077750797e86d017116314a1f9cd8becfb77b47befe4155bd
 
-Built from source commit `18657ae5970aeb7794361018596c33d7dad6a178`.
+Built from source commit `b7e6e2d8b2fca7e47ebd75a0a5cc877e43245a0b`.
 
 If those disagree, the page you are looking at is not the one that was reviewed.
 

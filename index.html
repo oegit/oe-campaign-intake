@@ -642,7 +642,11 @@ function configWarnings(cfg) {
   if (!cfg) return w;
   if (!(cfg.languages || []).length) w.push("`languages` is empty — no VoiceOver language can be picked, so the D2 review gate has nothing to block on");
   if (!Object.keys(cfg.channels || {}).length) w.push("`channels` is empty — no channel is offered, so no aspect-ratio default derives (R3) and no safe zone resolves");
-  if (!Object.keys(cfg.templates || {}).length) w.push("`templates` is empty — every campaign runs from scratch. Legitimate, but the estimate falls back to two slot scenes");
+  // No longer "the estimate falls back to two slot scenes" — that fallback is deleted (Z4) and the
+  // form prices nothing at all now. What an empty library actually costs a project is the BUILD
+  // stage: `build-bind.js` binds a template's scenes, and with no library there is no template to
+  // bind, so every campaign is authored from scratch and never travels the instantiation path.
+  if (!Object.keys(cfg.templates || {}).length) w.push("`templates` is empty — every campaign runs from scratch. Legitimate, but no campaign can be given a build (§10.7), so none is instantiated from a template");
   if (!(cfg.voices || []).length) w.push("`voices` is empty — the project declares no voice for the narrator role");
   if (!cfg.brand) w.push("no `brand` — the form keeps Layer 1's neutral colours and fonts");
   return w;
@@ -875,69 +879,64 @@ function voiceStatusOf(cfg, ref, code) {
 const voiceReadyIn = (cfg, ref, code) => VOICE_READY_STATUSES.indexOf(voiceStatusOf(cfg, ref, code)) !== -1;
 
 /**
- * MOTION scene types (spec §8.1b, decision Y2) — drawn by Remotion from Layer 2 tokens, generating
- * nothing, so their generation cost is ZERO and that is a fact about the PIPELINE, not about a
- * project's prices.
+ * THE PER-SCENE PRICING LEFT THIS FILE (Z4, v0.9) — it did not become a second copy.
  *
- * This is the second copy of the list, and it is checked rather than trusted: `scripts/scene-types.js`
- * reads this array out of this file by name and fails the run when it disagrees with the schemas.
- * The copy exists because this file is inlined into a single self-contained HTML page and cannot
- * `require` anything — the same constraint that makes the whole intake one file.
+ * `MOTION_SCENE_TYPES`, `typeCredits()`, `sceneCredits()` and `upperBoundScenes()` lived here so the
+ * browser could price a template's scenes before anyone spent. After Z2 this page selects no
+ * template in any branch, so all four became unreachable from it: there is no scene list to walk.
+ * They are in `scripts/build-bind.js` now, verbatim, where the template AND the confirmed slot types
+ * are both known — which is the difference between a quote and a projection.
+ *
+ * `scripts/scene-types.js` follows the code: the checked motion-list copy it reads is that file's.
+ * A list left behind here with no reader would be a fifth definition maintained by nobody, which is
+ * the exact shape this repo has spent an audit removing.
  */
-const MOTION_SCENE_TYPES = ["text_card_animated", "kinetic_typography", "lower_third", "logo_sting", "transition", "stat_callout"];
 
 /**
- * What one template scene costs to GENERATE, in credits.
+ * The brief's cost estimate — and after Z2 a brief cannot price a scene (Z4, v0.9).
  *
- * Three sources, in order, and the order is the decision (Y3):
+ * ── WHAT CHANGED, AND WHY IT IS NOT A REGRESSION ──────────────────────────────────────────────
  *
- *   1. **Motion is free, from Layer 1.** No provider is involved, so no project can be charged for
- *      it and no project should have to declare that. A Layer 2 `byType` entry cannot make a motion
- *      scene cost credits — a project may measure its own prices, it may not contradict the pipeline.
- *   2. **`byType`**, when Layer 2 has measured a particular non-motion type.
- *   3. **The level**, which is what every estimate used before v0.8.
+ * This used to walk the selected template's scenes and sum them. The form selects no template now
+ * (Z2), so there is nothing to walk: no scene list, no per-scene level, no confirmed slot type. The
+ * honest output for a document with nothing to price is `status: "not-captured"` and a ceiling
+ * reported **NOT APPLICABLE** — never a number and never a pass.
  *
- * The fallback to the level is what keeps a NEW scene type from silently pricing at zero: an
- * unlisted type keeps its level's cost, which errs toward over-projecting against a ceiling. The
- * inverse — defaulting an unknown type to 0 — is F5's lesson exactly: a number true of a different
- * path, presented as this one's.
+ * **The two-slot fallback is deleted, not defaulted.** It priced a template-less brief at
+ * `(sce.slot || 0) * 2` — two generated scenes' worth, for a campaign whose structure nobody had
+ * chosen. That is F5's lesson exactly: a number true of a different campaign, presented as this
+ * one's. It was survivable while it was the rare branch; after Z2 it would have been the number
+ * carried by EVERY brief, and it would have been checked against a ceiling and passed.
+ *
+ * **NOT APPLICABLE is a first-class answer, and it is not a pass (F4).** A check that could not run
+ * must say so — this repo's own rule, from the missing safe zone to the loudness reading that never
+ * happened to `qa-batch`'s coverage line. The real estimate and the real I1 check live in
+ * `scripts/build-bind.js` (§10.7), which is the first moment both the template and the confirmed
+ * slot types exist.
+ *
+ * Credit figures are OMITTED rather than sent as zeros or nulls: an absent field was not measured,
+ * and `0` here would say this campaign is free.
  */
-function sceneCredits(sce, scene) {
-  const level = scene && scene.level;
-  const type = scene && (scene.slotType || scene.proposedSlotType || scene.sceneType);
-  if (type && MOTION_SCENE_TYPES.indexOf(type) !== -1) return 0;
-  const byType = (sce && sce.byType) || {};
-  if (type && typeof byType[type] === "number") return byType[type];
-  return (sce && typeof sce[level] === "number" ? sce[level] : 0);
-}
-
-/**
- * The estimate, before any credit is spent (R10 · I1).
- *
- * Credits are computed; USD is NOT. No credit→USD rate is recorded anywhere in this repo, and the
- * project ceiling is denominated in USD (`ceilings.socialPerVideoUSD`) — so the honest output is a
- * credit figure plus `status: partial` naming the missing rate, exactly the V3/F5 shape the cost
- * ledger uses. Writing a made-up rate here would turn "we cannot check the ceiling" into a green
- * tick, which is the one outcome worth preventing.
- */
-function estimate(cfg, { template, count, voMode }) {
-  const tmpl = template ? (cfg.templates || {})[template] : null;
-  const sce = cfg.sceneCostEstimate || {};
-  const perVideoCredits = tmpl
-    ? (tmpl.scenes || []).reduce((s, sc) => s + sceneCredits(sce, sc), 0)
-    : (sce.slot || 0) * 2;
+function estimate(cfg, { count, voMode }) {
   const n = Math.max(0, Number(count) || 0);
-  const notCaptured = ["credit→USD rate is not recorded in this repo, so the USD ceiling cannot be checked here"];
+  const notCaptured = [
+    "no template is selected at intake (Z2), so there are no scenes to price — the estimate is produced by build-bind.js once the campaign has a build (§10.7)",
+    "credit→USD rate is not recorded in this repo, so a USD ceiling could not be checked here in any case",
+  ];
   if (voMode === "generate") notCaptured.push("VoiceOver — the TTS provider exposes no per-call price, so USD is not captured (V3)");
   return {
-    masterCredits: perVideoCredits,
-    perVariationCredits: perVideoCredits,
-    totalCredits: perVideoCredits * (1 + n),
+    variations: n,
     totalUsd: null,
     perVideoUsd: null,
     budgetUsd: (cfg.ceilings && cfg.ceilings.socialPerVideoUSD) != null ? cfg.ceilings.socialPerVideoUSD : null,
-    status: "partial",
+    status: "not-captured",
     notCaptured,
+    ceiling: {
+      status: "not-applicable",
+      note:
+        "NOT APPLICABLE, which is not a pass (F4): a brief selects no template, so nothing was priced and nothing was compared. " +
+        "The I1 ceiling is checked at build binding, before any credit is spent — `node scripts/build-bind.js --campaign <dir> --project <name>`.",
+    },
     // The dub cost is a LAYER 2 number. Layer 1 states the shape and the block; the measured price
     // belongs to whoever's account measured it, and this file is published (see §3.1) — so it reads
     // `cfg.dubPerLanguageCredits` / `cfg.dubCostNote` and defaults to "not estimated here" rather
@@ -1046,7 +1045,20 @@ function buildIntakeV2(s, cfg, now) {
     videoType: {
       type: vt ? vt.key : "",
       label: vt ? vt.label : "",
-      template: s.template || null,
+      // ALWAYS null, in every branch (Z2, v0.9). The brief does not choose a template.
+      //
+      // v0.8 offered one and promised it "pre-loads scene structure, its parametrized variables,
+      // and the agent's proposed slot choices". This page never performed that pre-load and could
+      // not: it has no scene surface to pre-load into. What it produced instead was measured by
+      // B21 — `videoType.templateVariables`, every field the instantiator consumes, emitted in NO
+      // branch — so a brief that selected a template could not be instantiated at all, and the one
+      // real submission that travelled this route needed a hand-authored master (B11).
+      //
+      // The literal is written here rather than the field being dropped because the SCHEMA KEEPS
+      // IT: a hand-authored intake may still name a template, and the four `1.0` documents on disk
+      // do. What changed is who answers the question — the build does (§10.7), where the scenes it
+      // commits to are visible.
+      template: null,
       ...(vt && vt.phase ? { phase: vt.phase } : {}),
     },
     channel: {
@@ -1085,7 +1097,7 @@ function buildIntakeV2(s, cfg, now) {
     },
     variations: {
       count: Math.max(0, Number(s.count) || 0),
-      costEstimate: estimate(cfg, { template: s.template, count: s.count, voMode: voiceover && voiceover.mode }),
+      costEstimate: estimate(cfg, { count: s.count, voMode: voiceover && voiceover.mode }),
     },
     compliance: (s.compliance || []).slice(),
     warnings: [],
@@ -1184,7 +1196,6 @@ if (typeof module !== "undefined" && module.exports) {
     REQUIRED_CONFIG_KEYS, missingConfigKeys, configWarnings, jsonErrorContext,
     deriveExecutionPending, deliveryUnassigned, reviewerStatusOf, formCampaignLanguages,
     VOICE_READY_STATUSES, voiceOf, voiceStatusOf, voiceReadyIn,
-    MOTION_SCENE_TYPES, sceneCredits,
     estimate, buildIntakeV2, formErrors, formErrorMessages, buildSubmission, submissionErrors,
     luminance, contrast, onColorFor, tint, shade, accessibleBrandText, ratioReport,
   };
@@ -1804,7 +1815,9 @@ function Form({ cfg, source, warnings, onForget }) {
     // Sin tipo de video elegido. Traía "social" precargado, y un radio ya marcado al abrir la
     // sección no es una sugerencia: es una respuesta que el formulario da por la persona y que
     // viaja al documento igual que si la hubiera elegido. Ahora es una tarea pendiente más.
-    goal: "", kpis: [], videoTypeKey: "", template: null,
+    // No `template` key: after Z2 the form neither asks for one nor emits one, and a state field
+    // nothing writes and nothing reads is the beginning of a control somebody re-adds by accident.
+    goal: "", kpis: [], videoTypeKey: "",
     canal: [], execution: ["Video Assembly"], editing: ["remotion"],
     scriptMode: "Generate", storyboardMode: "Generate", storyboardSkip: "", inspirationMode: "N/A",
     durationSec: "", aspectRatio: "9:16", outputFormat: OUTPUT_FORMATS[0],
@@ -2098,11 +2111,14 @@ function Form({ cfg, source, warnings, onForget }) {
             </Chip>
           ))}
         </ChipGroup>
-        <label htmlFor="f-template">Template</label>
-        <select id="f-template" value={s.template || ""} onChange={(e) => up({ template: e.target.value || null })}>
-          <option value="">From scratch</option>
-          {Object.keys(cfg.templates).map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
+        {/* THE TEMPLATE SELECTOR IS GONE (Z2, v0.9), and removing the CONTROL is the point.
+            Emitting `template: null` while a <select> still offered the choice would be the same
+            defect one layer down: the page would ask a question and drop the answer, which is worse
+            than not asking. A template commits a scene structure — per-scene copy in every language,
+            a confirmed type per slot — and this form has no surface for any of it. B21 measured the
+            consequence: `videoType.templateVariables` produced in no branch, so a brief that picked
+            a template could not be instantiated at all. The template is chosen at build binding
+            (§10.7), where the scenes it commits to are visible. */}
         {vt && vt.phase && <div className="hint">You can pick this and we record it — we just do not produce it yet.</div>}
       </section>
       )}
