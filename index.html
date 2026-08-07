@@ -578,6 +578,74 @@ const IMPLEMENTED_EDITING = RUNNABLE_PAIRS.map((p) => p.editing).filter((v, i, a
  */
 const CANAL = ["Meta", "TikTok", "YouTube Shorts", "LinkedIn"];
 
+/**
+ * 00 Objectives · the KPIs — THE CHANNEL WINS, THE VIDEO TYPE IS THE FALLBACK (2026-08-06).
+ *
+ * This is the ONE definition of the rule. It lives here and not in a `scripts/` module for the same
+ * reason every other vocabulary does: `intake.html` INLINES this file and cannot `require` anything.
+ * `npm run intake:sync` and `intake-form.test.js` are what keep the two copies from drifting.
+ *
+ * ── WHY IT IS A HYBRID AND NOT A REPLACEMENT ──────────────────────────────────────────────────
+ * The KPIs used to be keyed by video type alone, because that is the only axis this form has always
+ * had. A marketing team hands them over by CHANNEL, which is the axis a marketer actually measures
+ * on — but a channel cannot replace the video type here, for two reasons that are facts about this
+ * form rather than opinions:
+ *
+ *   · `canal` is SOCIAL-ONLY and OPTIONAL. TV Ads, Platform Tour, YouTube and General never declare
+ *     one, and a Platform Tour is not even distributed on a marketing channel — it lives inside the
+ *     product. Three of the five types would be left with nothing.
+ *   · `canal` has FOUR labels. A real channel list is much longer, `Meta` covers two platforms with
+ *     different primaries, and there is no organic/paid axis. A project resolves that gap by what it
+ *     puts under each label — a union, if that is the honest answer — and the gap itself is recorded
+ *     in the project's own notes, not papered over here.
+ *
+ * The hybrid is not an invention either: the marketing table states it, giving each video script a
+ * declared default "with no channel declared → …". This function is that sentence in code.
+ *
+ * ── IT RETURNS WHICH QUESTION IT ANSWERED (F4) ────────────────────────────────────────────────
+ * `source` and `basis` exist so the form can say "KPIs for Meta, TikTok" rather than just "KPIs" —
+ * the same rule the safe-zone and coverage lines follow. A list that came from the fallback and a
+ * list that came from the channel look identical once they are chips, and the difference is exactly
+ * what somebody filling the brief needs in order to trust them.
+ *
+ * A config in the pre-2026-08-06 flat shape resolves to NOTHING here rather than to a wrong answer.
+ * `configWarnings()` is what names it — silence would be the F4 failure this whole file argues about.
+ */
+function resolveKpis(cfg, videoTypeKey, canal) {
+  const kpis = (cfg && cfg.kpis) || {};
+  const byChannel = kpis.byChannel || {};
+  const byVideoType = kpis.byVideoType || {};
+  const labels = (Array.isArray(canal) ? canal : []).filter((l) => typeof l === "string" && l);
+
+  if (labels.length) {
+    // Several channels → the union, deduped and in the order the labels were picked. A metric two
+    // channels share is ONE chip: it is the same recorded string either way, and offering it twice
+    // would let the same KPI be selected and deselected from two places.
+    const out = [];
+    for (const label of labels) {
+      for (const k of (Array.isArray(byChannel[label]) ? byChannel[label] : [])) {
+        if (!out.includes(k)) out.push(k);
+      }
+    }
+    return { kpis: out, source: "channel", basis: labels.slice() };
+  }
+
+  const list = byVideoType[videoTypeKey];
+  return {
+    kpis: Array.isArray(list) ? list.slice() : [],
+    source: "videoType",
+    basis: videoTypeKey ? [videoTypeKey] : [],
+  };
+}
+
+/** Is this a config written before the byChannel/byVideoType split? Present, non-empty, neither key. */
+const isLegacyKpiShape = (cfg) => {
+  const k = (cfg && cfg.kpis) || null;
+  if (!k || typeof k !== "object" || Array.isArray(k)) return false;
+  if (k.byChannel || k.byVideoType) return false;
+  return Object.keys(k).length > 0;
+};
+
 const MODES = ["Generate", "Add", "N/A"];
 const RATIOS = ["9:16", "1:1", "4:5", "16:9"];
 const OUTPUT_FORMATS = ["MP4 H.264", "MOV ProRes"];
@@ -648,6 +716,28 @@ function configWarnings(cfg) {
   // bind, so every campaign is authored from scratch and never travels the instantiation path.
   if (!Object.keys(cfg.templates || {}).length) w.push("`templates` is empty — every campaign runs from scratch. Legitimate, but no campaign can be given a build (§10.7), so none is instantiated from a template");
   if (!(cfg.voices || []).length) w.push("`voices` is empty — the project declares no voice for the narrator role");
+  // A config written before 2026-08-06 keys `kpis` by video type alone. It is PRESENT and non-empty,
+  // so the fail-closed door lets it through, and `resolveKpis` finds neither map — so every chip
+  // group comes up empty and the form says the project declares no KPIs, which is a different and
+  // untrue statement. Naming it is the whole job; migrating somebody's config is not this file's.
+  if (isLegacyKpiShape(cfg)) {
+    w.push(
+      "`kpis` is in the pre-2026-08-06 shape (keyed by video type at the top level) — no chip will be " +
+      "offered for any channel or any type. It now takes `byChannel` (keyed by the channel labels: " +
+      CANAL.join(", ") + ") and `byVideoType` (keyed by the video-type keys), with the channel winning " +
+      "and the type used as the fallback when no channel is declared"
+    );
+  } else if (cfg.kpis && (cfg.kpis.byChannel || cfg.kpis.byVideoType)) {
+    // A label the form OFFERS with nothing behind it is the same silence one layer down: the chip
+    // group renders "this project declares no KPIs" for a channel the person just picked.
+    const undeclared = CANAL.filter((label) => !((cfg.kpis.byChannel || {})[label] || []).length);
+    if (undeclared.length) {
+      w.push(
+        "`kpis.byChannel` declares nothing for " + undeclared.join(", ") + " — the form offers " +
+        "th" + (undeclared.length === 1 ? "at channel" : "ose channels") + " and would show no KPI to pick"
+      );
+    }
+  }
   if (!cfg.brand) w.push("no `brand` — the form keeps Layer 1's neutral colours and fonts");
   return w;
 }
@@ -1191,7 +1281,7 @@ function submissionErrors(s, cfg) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     VIDEO_TYPES, EXECUTIONS, IMPLEMENTED_EXECUTIONS, EDITING, IMPLEMENTED_EDITING, CANAL,
-    RUNNABLE_PAIRS, isRunnablePair,
+    RUNNABLE_PAIRS, isRunnablePair, resolveKpis, isLegacyKpiShape,
     MODES, RATIOS, OUTPUT_FORMATS, CREATION_TYPES, UPLOAD_KINDS, SHEET_CHANNELS, SKIP_PHRASE,
     REQUIRED_CONFIG_KEYS, missingConfigKeys, configWarnings, jsonErrorContext,
     deriveExecutionPending, deliveryUnassigned, reviewerStatusOf, formCampaignLanguages,
@@ -1362,28 +1452,52 @@ const PROJECT_CONFIG = {
     }
   },
   "kpis": {
-    "tv": [
-      "Reach",
-      "Frequency",
-      "Brand lift"
-    ],
-    "social": [
-      "Hook rate",
-      "Hold rate",
-      "CTR",
-      "Saves / Shares"
-    ],
-    "youtube": [
-      "Watch time",
-      "Avg % viewed",
-      "CTR"
-    ],
-    "platform": [
-      "Activation",
-      "Feature adoption",
-      "Completion rate"
-    ],
-    "general": []
+    "byChannel": {
+      "Meta": [
+        "DM Shares (Sends per Reach)",
+        "Engagement Rate by Reach",
+        "Saves Rate",
+        "Shares",
+        "Video 3-sec View Rate",
+        "Leads",
+        "CPL",
+        "Sales",
+        "MNCC"
+      ],
+      "TikTok": [
+        "Completion Rate",
+        "Rewatch Rate",
+        "FYP Traffic"
+      ],
+      "YouTube Shorts": [
+        "Viewed vs. Swiped-Away Rate",
+        "Views",
+        "Engagement Rate"
+      ],
+      "LinkedIn": [
+        "Engagement Rate by Impressions",
+        "Comments Rate",
+        "Document/Carousel Performance"
+      ]
+    },
+    "byVideoType": {
+      "tv": [
+        "Branded leads",
+        "CPL"
+      ],
+      "social": [
+        "Completion Rate"
+      ],
+      "youtube": [
+        "Watch Time Total",
+        "Click-Through Rate (CTR)",
+        "Average View Duration (AVD)"
+      ],
+      "platform": [
+        "Tour Completion Rate"
+      ],
+      "general": []
+    }
   },
   "ceilings": {
     "socialPerVideoUSD": 10
@@ -1835,7 +1949,10 @@ function Form({ cfg, source, warnings, onForget }) {
 
   const vt = VIDEO_TYPES.find((t) => t.key === s.videoTypeKey) || null;
   const isSocial = !!vt && vt.key === "social";
-  const kpiOptions = vt ? ((cfg.kpis || {})[vt.key] || []) : [];
+  // THE CHANNEL WINS; the video type is the fallback (see `resolveKpis`). `basis` is what lets the
+  // legend name which question it answered, instead of showing a list whose origin is invisible.
+  const kpi = resolveKpis(cfg, s.videoTypeKey, s.canal);
+  const kpiOptions = kpi.kpis;
   const pending = deriveExecutionPending(s.execution, s.editing);
   const errors = formErrors(s, cfg);
   const intake = useMemo(() => buildIntakeV2(s, cfg, new Date().toISOString()), [JSON.stringify(s)]);
@@ -1850,6 +1967,12 @@ function Form({ cfg, source, warnings, onForget }) {
     if (first && cfg.channels[first]) {
       patch.aspectRatio = cfg.channels[first].ratios[0] || s.aspectRatio;
     }
+    // THE KPIs FOLLOW THE CHANNEL, so dropping a channel drops the KPIs only it offered. Without
+    // this the brief keeps recording a metric for a platform it no longer names — and the chip is
+    // gone from the screen, so nobody can see it to remove it. Every KPI still on offer is kept:
+    // the union means a metric two channels share survives losing one of them.
+    const offered = resolveKpis(cfg, s.videoTypeKey, next).kpis;
+    patch.kpis = (s.kpis || []).filter((k) => offered.includes(k));
     up(patch);
   }
 
@@ -2094,9 +2217,37 @@ function Form({ cfg, source, warnings, onForget }) {
         <h2><span className="n">00</span> Objectives</h2>
         <label htmlFor="f-goal">What is this campaign for, in your own words?</label>
         <textarea id="f-goal" value={s.goal} aria-invalid={errors.some((e) => e.field === "f-goal") ? "true" : undefined} onChange={(e) => up({ goal: e.target.value })} placeholder="e.g. Drive trial sign-ups from lapsed users in our main market." />
-        <ChipGroup id="g-kpis" legend={vt ? `KPIs for a ${vt.label.toLowerCase()} video` : "KPIs"} hint="Recorded with your brief. We do not measure them — the work ends at approved files.">
+        {/* The legend NAMES which question it answered — channel or video type. A list from the
+            channel and a list from the fallback look identical once they are chips, and that is
+            precisely what somebody filling the brief needs in order to trust them (F4). */}
+        <ChipGroup
+          id="g-kpis"
+          legend={
+            kpi.source === "channel" ? `KPIs for ${kpi.basis.join(" + ")}`
+            : vt ? `KPIs for a ${vt.label.toLowerCase()} video`
+            : "KPIs"
+          }
+          hint={
+            (kpi.source === "channel"
+              ? "These come from the channel this ships on. "
+              : vt && isSocial
+                ? "No channel picked yet — this is the fallback for a social video. Pick one in section 02 and these become that channel's KPIs. "
+                : vt
+                  ? `${vt.label} ships on no channel, so these are the video type's own. `
+                  : "") +
+            "Recorded with your brief. We do not measure them — the work ends at approved files."
+          }
+        >
           {kpiOptions.map((k) => <Chip key={k} on={s.kpis.includes(k)} onClick={() => up({ kpis: toggle(s.kpis, k) })}>{k}</Chip>)}
-          {!kpiOptions.length && <span className="hint">This project declares no KPIs for this video type.</span>}
+          {!kpiOptions.length && (
+            <span className="hint">
+              {kpi.source === "channel"
+                ? `This project declares no KPIs for ${kpi.basis.join(" or ")}.`
+                : vt
+                  ? `This project declares no KPIs for a ${vt.label.toLowerCase()} video with no channel.`
+                  : "Pick a video type in section 01 to see the KPIs it is measured by."}
+            </span>
+          )}
         </ChipGroup>
       </section>
       )}
