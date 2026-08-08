@@ -1006,12 +1006,20 @@ const voiceReadyIn = (cfg, ref, code) => VOICE_READY_STATUSES.indexOf(voiceStatu
  *
  * Credit figures are OMITTED rather than sent as zeros or nulls: an absent field was not measured,
  * and `0` here would say this campaign is free.
+ *
+ * **The second `notCaptured` reason was corrected on 2026-08-08 (T59), and the verdict was not.**
+ * It used to say "credit→USD rate is not recorded in this repo", which was true when Z4 was written
+ * and stopped being true on 2026-08-07: `models.yaml` records `$0.0625` per **Cloud** credit from a
+ * real top-up, and `build-bind.js` has compared dollars to dollars since T53. What is still true is
+ * that a rate is **per wallet** — the plan wallet has none — and this form cannot know which wallet
+ * a campaign will run on, because that is decided by execution context long after submission (AA1).
+ * So the ceiling is still NOT APPLICABLE here, for a reason that is now the real one.
  */
 function estimate(cfg, { count, voMode }) {
   const n = Math.max(0, Number(count) || 0);
   const notCaptured = [
     "no template is selected at intake (Z2), so there are no scenes to price — the estimate is produced by build-bind.js once the campaign has a build (§10.7)",
-    "credit→USD rate is not recorded in this repo, so a USD ceiling could not be checked here in any case",
+    "a credit→USD rate exists only for the Cloud wallet ($0.0625/credit, 2026-08-07), and this form does not know which wallet a campaign will run on — so a USD ceiling could not be checked here in any case",
   ];
   if (voMode === "generate") notCaptured.push("VoiceOver — the TTS provider exposes no per-call price, so USD is not captured (V3)");
   return {
